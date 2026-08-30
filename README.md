@@ -1,4 +1,4 @@
-# CPIO III — Otimização Estrutural com PSO-RID e Análise Não Linear
+# Otimização Estrutural com PSO-RID e Análise Não Linear
 
 Implementação do **PSO-RID** (Particle Swarm Optimization Real-Inteiro-Discreto) aplicado
 à otimização de peso de treliças com **não linearidade geométrica** ($K_T = K_E + K_G$),
@@ -6,7 +6,7 @@ Newton-Raphson incremental e tratamento de restrições pela regra de viabilidad
 
 ---
 
-## 📚 Referências teóricas (fundamentação do código)
+## Referências teóricas (fundamentação do código)
 
 Cada fórmula no código cita a referência e o número da equação. As três abaixo são a base:
 
@@ -21,7 +21,7 @@ PDFs em `00_docs/artigos/` e `00_docs/livros/`.
 
 ---
 
-## 🧱 Organização em 3 blocos
+## Organização em 3 blocos
 
 O projeto é dividido em três blocos **testáveis isoladamente**:
 
@@ -71,7 +71,7 @@ longos de saída.
 
 ---
 
-## 🚀 Como executar
+## Como executar
 
 ```matlab
 setup_paths                  % configura os caminhos
@@ -90,10 +90,10 @@ r = main_hadi_nao_linear(123, 10);   % semente 123, 10 execuções
 
 ---
 
-## 🧪 Testes
+## Testes
 
 Framework `matlab.unittest`. **Exige MATLAB** — o GNU Octave não implementa esse
-framework (o Octave continua servindo para rodar os solvers diretamente).
+framework.
 
 ```bash
 matlab -batch "cd('06_testes'); run_todos_testes"
@@ -116,14 +116,14 @@ runtests('06_testes/TestFemNaoLinear.m')           % um bloco só
 
 ---
 
-## ✅ Estado da validação
+## Estado da validação
 
 **Newton-Raphson validado contra solução analítica exata.** A treliça rasa de von Mises
 (`problema_trelica_rasa_2barras.m`) tem solução fechada; o solver reproduz o deslocamento
 do ápice com erro relativo **~1e-11** de 10% a 90% da carga crítica — regime em que a
 análise linear erra 37,9%.
 
-> ⚠️ **Nota metodológica importante:** a fórmula analítica foi derivada para **deformação
+> **Nota metodológica importante:** a fórmula analítica foi derivada para **deformação
 > de engenharia**, que é a medida usada pelo solver. Fórmulas clássicas de treliça abatida
 > (Crisfield, Yaw) usam **deformação de Green** e *não* são diretamente comparáveis — usá-las
 > produziria um desacordo que seria erroneamente lido como bug.
@@ -146,7 +146,7 @@ Ambas ficaram **inconclusivas** com execuções únicas (diferenças dentro do r
 
 ---
 
-## 📄 Documentação
+## Documentação
 
 `00_docs/notas_e_relatorios/`:
 
