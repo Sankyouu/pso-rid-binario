@@ -1,0 +1,12 @@
+ESTUDO ESTATISTICO PSO-RID
+Data: 28-Aug-2026 14:53:26
+Analise: linear | Sementes: [1 2] | Orcamento: 15000 avaliacoes
+
+A datta
+  melhor=2525.83 media=2606.46 desvio=114.03 viabilidade=100%
+  pesos por semente: [2525.83 2687.1]
+
+B proporcional
+  melhor=2356.80 media=2406.40 desvio=70.15 viabilidade=100%
+  pesos por semente: [2356.8 2456.01]
+

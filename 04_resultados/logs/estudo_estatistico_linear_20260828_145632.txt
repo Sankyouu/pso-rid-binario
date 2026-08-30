@@ -1,0 +1,20 @@
+ESTUDO ESTATISTICO PSO-RID
+Data: 28-Aug-2026 14:56:32
+Analise: linear | Sementes: [1 2 3 4 5 6 7 8 9 10] | Orcamento: 15000 avaliacoes
+
+A: Datta puro
+  melhor=2374.81 media=2551.24 desvio=173.54 viabilidade=100%
+  pesos por semente: [2596.3 2585.13 2888.29 2476.36 2377.61 2411.46 2747.3 2646.48 2408.65 2374.81]
+
+B: A + decod. proporcional
+  melhor=2342.11 media=2467.37 desvio=88.78 viabilidade=100%
+  pesos por semente: [2489.18 2577.16 2359.63 2356.8 2342.11 2524.21 2448.58 2540.54 2468.41 2567.1]
+
+C: A + hiperparam. fixos
+  melhor=2390.64 media=2582.54 desvio=230.14 viabilidade=100%
+  pesos por semente: [2390.64 2501.05 3123.84 2608.24 2474.01 2471.66 2536.12 2842.1 2390.64 2487.09]
+
+D: fixos + proporcional (legado)
+  melhor=2380.44 media=2533.60 desvio=120.84 viabilidade=100%
+  pesos por semente: [2586.26 2476.79 2548.47 2505.04 2491.98 2472.36 2468.41 2832.98 2380.44 2573.22]
+
