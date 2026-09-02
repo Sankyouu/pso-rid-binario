@@ -20,8 +20,17 @@ function resultados = run_todos_testes()
 %       TestRegrasDeb           Deb (2000) pag. 316
 %       TestVelocidadeBinaria   Eq. (7)-(8), Tabelas 1-2    [D3][D4]
 %       TestMutacaoPolinomial   Eq. (9)                     [D5]
-%   Bloco 2 - FEM Nao Linear    (a implementar)
-%   Bloco 3 - Orquestrador      (a implementar)
+%   Bloco 2 - FEM
+%       TestFemLinear           solucoes fechadas, simetria, equilibrio
+%       TestFemNaoLinear        validacao analitica exata, K_T = K_E + K_G
+%   Bloco 1+2+3
+%       TestIntegracao          interfaces entre blocos, ciclo completo
+%
+% NOTA: os casos de estudo nao sao arquivos proprios — vivem como funcao
+% local no respectivo orquestrador e sao obtidos por acessor
+% (main_hadi_nao_linear('caso'), main_awruch_discreto('caso')). Por isso
+% 03_orquestrador precisa estar no path para os testes do Bloco 2.
+% O oraculo analitico problema_trelica_rasa_2barras.m fica nesta pasta.
 
 pasta_testes = fileparts(mfilename('fullpath'));
 raiz         = fullfile(pasta_testes, '..');
@@ -30,6 +39,7 @@ addpath(genpath(fullfile(raiz, '01_pso_rid')));
 addpath(genpath(fullfile(raiz, '02_fem_nao_linear')));
 addpath(genpath(fullfile(raiz, '03_orquestrador')));
 addpath(fullfile(raiz, '05_legado'));
+addpath(pasta_testes);
 addpath(raiz);
 
 fprintf('==========================================================\n');

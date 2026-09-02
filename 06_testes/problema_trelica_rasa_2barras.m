@@ -8,9 +8,9 @@ function caso = problema_trelica_rasa_2barras(a, h, E, A, dens)
 % software. E o teste mais forte disponivel para o Newton-Raphson, porque
 % nao depende de reproduzir o resultado de terceiros.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % GEOMETRIA (trelica de von Mises / trelica rasa de duas barras)
-% =========================================================================
+% -------------------------------------------------------------------------
 %
 %                        no 3 (apice)
 %                          o  <-- carga P, vertical para baixo
@@ -25,9 +25,9 @@ function caso = problema_trelica_rasa_2barras(a, h, E, A, dens)
 %   vertical, o que reduz o problema a UMA incognita escalar (w) e permite
 %   solucao fechada.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % SOLUCAO ANALITICA EXATA  (derivada para DEFORMACAO DE ENGENHARIA)
-% =========================================================================
+% -------------------------------------------------------------------------
 % Seja w o deslocamento vertical do apice, positivo para BAIXO.
 %
 %   comprimento inicial :  L0   = sqrt(a^2 + h^2)
@@ -64,9 +64,9 @@ function caso = problema_trelica_rasa_2barras(a, h, E, A, dens)
 % medida — e o oraculo correto. Usar a formula de Green produziria um
 % desacordo que seria erroneamente interpretado como bug no solver.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % ENTRADAS (todas opcionais; os padroes formam um caso raso bem-condicionado)
-% =========================================================================
+% -------------------------------------------------------------------------
 %   a    : meio-vao horizontal            (padrao 1000  [mm])
 %   h    : altura inicial do apice        (padrao  100  [mm])
 %   E    : modulo de elasticidade         (padrao 70000 [MPa])

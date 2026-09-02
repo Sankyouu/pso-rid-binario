@@ -1,5 +1,5 @@
 classdef TestVelocidadeBinaria < matlab.unittest.TestCase
-% TESTVELOCIDADEBINARIA  Testes de rid_velocidade_binaria contra as Tabelas 1 e 2.
+% TESTVELOCIDADEBINARIA  Testes de velocidade_binaria contra as Tabelas 1 e 2.
 %
 % BLOCO TESTADO: 1 (PSO-RID). Puramente logico — nenhum FEM envolvido.
 %
@@ -25,18 +25,25 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
         N_AMOSTRAS = 4000;   % amostras para os testes estatisticos
     end
 
+    properties
+        % Handles das funcoes locais de pso_rid.m (ver "ACESSO AOS
+        % AUXILIARES PARA TESTE" no cabecalho daquele arquivo).
+        aux
+    end
+
     methods (TestClassSetup)
-        function adicionarCaminhos(~)
+        function adicionarCaminhos(tc)
             aqui = fileparts(mfilename('fullpath'));
             addpath(genpath(fullfile(aqui, '..', '01_pso_rid')));
+            tc.aux = pso_rid('auxiliares');
         end
     end
 
     methods (Test)
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % Eq. (7) — DOMINIO ADMISSIVEL DA VELOCIDADE
-        % =================================================================
+        % -----------------------------------------------------------------
         function testEq7_ParaBitZeroVelocidadeNuncaEhNegativa(tc)
             % Tabela 1 [DF2011]: com x=0 os unicos valores admissiveis de v
             % sao 0 e +1. v = -1 e INADMISSIVEL (levaria a x = -1).
@@ -47,7 +54,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             for t = tendencias
                 for pm = [0, 0.15, 0.5, 1.0]
                     for k = 1:40
-                        v = rid_velocidade_binaria(0, t, pm);
+                        v = tc.aux.velocidade_binaria(0, t, pm);
                         tc.verifyTrue(v == 0 || v == 1, ...
                             sprintf(['Eq. (7)/Tab. 1 violada: x=0, tendencia=%g, ' ...
                                      'pm=%g gerou v=%g (esperado 0 ou +1).'], t, pm, v));
@@ -63,7 +70,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             for t = tendencias
                 for pm = [0, 0.15, 0.5, 1.0]
                     for k = 1:40
-                        v = rid_velocidade_binaria(1, t, pm);
+                        v = tc.aux.velocidade_binaria(1, t, pm);
                         tc.verifyTrue(v == 0 || v == -1, ...
                             sprintf(['Eq. (7)/Tab. 2 violada: x=1, tendencia=%g, ' ...
                                      'pm=%g gerou v=%g (esperado 0 ou -1).'], t, pm, v));
@@ -79,7 +86,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
                 for t = [-1e3, -1, 0, 1, 1e3]
                     for pm = [0, 0.15, 1.0]
                         for k = 1:40
-                            [~, x_next] = rid_velocidade_binaria(x, t, pm);
+                            [~, x_next] = tc.aux.velocidade_binaria(x, t, pm);
                             tc.verifyTrue(x_next == 0 || x_next == 1, ...
                                 sprintf('Posicao resultante nao binaria: %g.', x_next));
                         end
@@ -93,7 +100,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             for x = [0 1]
                 for t = [-5, 0, 5]
                     for k = 1:100
-                        [v, x_next] = rid_velocidade_binaria(x, t, 0.15);
+                        [v, x_next] = tc.aux.velocidade_binaria(x, t, 0.15);
                         tc.verifyEqual(x_next, x + v, ...
                             'x_next deve ser igual a x_atual + v_next.');
                     end
@@ -101,14 +108,14 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % Eq. (8) — MAPEAMENTO DETERMINISTICO (com pm = 0)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testEq8_SemMutacao_TendenciaPositivaComBitZeroLevaAUm(tc)
             % Tabela 1, tendencia > 0 => v = +1 (deterministico com pm=0).
             for t = [1e-9, 0.5, 1, 100, 1e6]
                 for k = 1:50
-                    [v, x_next] = rid_velocidade_binaria(0, t, 0);
+                    [v, x_next] = tc.aux.velocidade_binaria(0, t, 0);
                     tc.verifyEqual(v, 1, ...
                         sprintf('Eq. (8): x=0, tendencia=%g deveria dar v=+1.', t));
                     tc.verifyEqual(x_next, 1);
@@ -120,7 +127,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             % Tabela 1, tendencia < 0: v = -1 seria inadmissivel, logo v = 0.
             for t = [-1e-9, -0.5, -1, -100, -1e6]
                 for k = 1:50
-                    [v, x_next] = rid_velocidade_binaria(0, t, 0);
+                    [v, x_next] = tc.aux.velocidade_binaria(0, t, 0);
                     tc.verifyEqual(v, 0, ...
                         sprintf('Eq. (8): x=0, tendencia=%g deveria dar v=0.', t));
                     tc.verifyEqual(x_next, 0);
@@ -132,7 +139,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             % Tabela 2, tendencia < 0 => v = -1.
             for t = [-1e-9, -0.5, -1, -100, -1e6]
                 for k = 1:50
-                    [v, x_next] = rid_velocidade_binaria(1, t, 0);
+                    [v, x_next] = tc.aux.velocidade_binaria(1, t, 0);
                     tc.verifyEqual(v, -1, ...
                         sprintf('Eq. (8): x=1, tendencia=%g deveria dar v=-1.', t));
                     tc.verifyEqual(x_next, 0);
@@ -144,7 +151,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             % Tabela 2, tendencia > 0: v = +1 seria inadmissivel, logo v = 0.
             for t = [1e-9, 0.5, 1, 100, 1e6]
                 for k = 1:50
-                    [v, x_next] = rid_velocidade_binaria(1, t, 0);
+                    [v, x_next] = tc.aux.velocidade_binaria(1, t, 0);
                     tc.verifyEqual(v, 0, ...
                         sprintf('Eq. (8): x=1, tendencia=%g deveria dar v=0.', t));
                     tc.verifyEqual(x_next, 1);
@@ -152,14 +159,14 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % COLUNA 7 DAS TABELAS 1 e 2 — PROBABILIDADE DE MUTACAO p_m
-        % =================================================================
+        % -----------------------------------------------------------------
         function testPm_Zero_EhTotalmenteDeterministico(tc)
             % Com pm = 0 nunca se adota o valor alternativo.
-            v_ref = rid_velocidade_binaria(0, 1.0, 0);
+            v_ref = tc.aux.velocidade_binaria(0, 1.0, 0);
             for k = 1:200
-                tc.verifyEqual(rid_velocidade_binaria(0, 1.0, 0), v_ref);
+                tc.verifyEqual(tc.aux.velocidade_binaria(0, 1.0, 0), v_ref);
             end
         end
 
@@ -167,12 +174,12 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             % Com pm = 1 sempre se adota o valor ALTERNATIVO ao mapeado.
             % x=0, tendencia>0: mapeado = +1, logo alternativa = 0.
             for k = 1:200
-                tc.verifyEqual(rid_velocidade_binaria(0, 1.0, 1.0), 0, ...
+                tc.verifyEqual(tc.aux.velocidade_binaria(0, 1.0, 1.0), 0, ...
                     'Com pm=1 deveria adotar sempre a alternativa.');
             end
             % x=1, tendencia<0: mapeado = -1, logo alternativa = 0.
             for k = 1:200
-                tc.verifyEqual(rid_velocidade_binaria(1, -1.0, 1.0), 0);
+                tc.verifyEqual(tc.aux.velocidade_binaria(1, -1.0, 1.0), 0);
             end
         end
 
@@ -183,7 +190,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             for pm = [0.05, 0.15, 0.30]
                 n_alt = 0;
                 for k = 1:tc.N_AMOSTRAS
-                    v = rid_velocidade_binaria(0, 1.0, pm);   % mapeado = +1
+                    v = tc.aux.velocidade_binaria(0, 1.0, pm);   % mapeado = +1
                     if v == 0, n_alt = n_alt + 1; end          % alternativa = 0
                 end
                 freq = n_alt / tc.N_AMOSTRAS;
@@ -192,9 +199,9 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % EMPATE EXATO (tendencia == 0)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testTendenciaZero_DivideMeioAMeio(tc)
             % Nas linhas das Tabelas 1 e 2 sem relacao definida, cada opcao
             % vale 50% ("In the case of double options, each value is
@@ -202,7 +209,7 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
             rng(20260828);
             n_um = 0;
             for k = 1:tc.N_AMOSTRAS
-                if rid_velocidade_binaria(0, 0, 0) == 1
+                if tc.aux.velocidade_binaria(0, 0, 0) == 1
                     n_um = n_um + 1;
                 end
             end
@@ -211,16 +218,16 @@ classdef TestVelocidadeBinaria < matlab.unittest.TestCase
                 sprintf('Empate deveria dividir 50/50, obteve %.3f.', freq));
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % VALIDACAO DE ENTRADA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testRejeitaPosicaoNaoBinaria(tc)
-            tc.verifyError(@() rid_velocidade_binaria(2,   1, 0.15), ...
-                'rid_velocidade_binaria:posicaoInvalida');
-            tc.verifyError(@() rid_velocidade_binaria(-1,  1, 0.15), ...
-                'rid_velocidade_binaria:posicaoInvalida');
-            tc.verifyError(@() rid_velocidade_binaria(0.5, 1, 0.15), ...
-                'rid_velocidade_binaria:posicaoInvalida');
+            tc.verifyError(@() tc.aux.velocidade_binaria(2,   1, 0.15), ...
+                'velocidade_binaria:posicaoInvalida');
+            tc.verifyError(@() tc.aux.velocidade_binaria(-1,  1, 0.15), ...
+                'velocidade_binaria:posicaoInvalida');
+            tc.verifyError(@() tc.aux.velocidade_binaria(0.5, 1, 0.15), ...
+                'velocidade_binaria:posicaoInvalida');
         end
     end
 end

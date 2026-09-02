@@ -14,26 +14,33 @@ classdef TestIntegracao < matlab.unittest.TestCase
 %
 % Executar:  runtests('06_testes/TestIntegracao.m')
 
+    properties
+        % Handles das funcoes locais de pso_rid.m (ver "ACESSO AOS
+        % AUXILIARES PARA TESTE" no cabecalho daquele arquivo).
+        aux
+    end
+
     methods (TestClassSetup)
-        function adicionarCaminhos(~)
+        function adicionarCaminhos(tc)
             aqui = fileparts(mfilename('fullpath'));
             raiz = fullfile(aqui, '..');
             addpath(raiz);
             addpath(genpath(fullfile(raiz, '01_pso_rid')));
             addpath(genpath(fullfile(raiz, '02_fem_nao_linear')));
             addpath(genpath(fullfile(raiz, '03_orquestrador')));
+            tc.aux = pso_rid('auxiliares');
         end
     end
 
     methods (Test)
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 1. INTERFACE PSO <-> PROBLEMA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testProblemaHadi_ForneceInterfaceCompletaParaOsDoisBlocos(tc)
             % O arquivo de problema precisa servir SIMULTANEAMENTE ao Bloco 2
             % (campos do solver) e ao Bloco 1 (config_vars do otimizador).
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             % Campos exigidos pelo solver (Bloco 2a)
             for campo = {'nodes0','elements','apoios','F_total','E','dens'}
@@ -54,7 +61,7 @@ classdef TestIntegracao < matlab.unittest.TestCase
         function testAreasDecodificadasSaoAceitasPeloSolver(tc)
             % Toda solucao que o PSO produz precisa ser aceitavel pelo FEM.
             % Este teste fecha o ciclo: decodifica -> avalia -> sem erro.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             chamadas = 0;
             function [j, v] = espiao(areas)
@@ -77,7 +84,7 @@ classdef TestIntegracao < matlab.unittest.TestCase
         function testSolucaoFinalPertenceAoCatalogo(tc)
             % A melhor solucao devolvida pelo PSO deve ser construivel:
             % todas as areas tem de existir no catalogo do problema.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             fobj = @(areas) custo_linear(caso, areas);
             p = struct('n_particulas', 12, 'max_iter', 12, 'verbose', false, ...
@@ -93,17 +100,17 @@ classdef TestIntegracao < matlab.unittest.TestCase
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 2. CATALOGOS DE CARDINALIDADES DIFERENTES (caso Awruch)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testCatalogosPorBarra_DimensionamentoIndependente(tc)
             % [DF2011] Eq. (5): cada variavel discreta recebe B_k = ceil(log2(N_k)).
             % Com catalogos de tamanhos distintos, os blocos de bits precisam
             % ser dimensionados INDEPENDENTEMENTE — caminho que o benchmark de
             % Hadi (catalogo unico) nao exercita.
-            caso = problema_awruch_10barras();
+            caso = main_awruch_discreto('caso');
 
-            [mapa, total] = rid_mapear_dimensoes(caso.config_vars);
+            [mapa, total] = tc.aux.mapear_dimensoes(caso.config_vars);
 
             for i = 1:numel(caso.config_vars)
                 N_i = numel(caso.config_vars(i).opcoes);
@@ -116,7 +123,7 @@ classdef TestIntegracao < matlab.unittest.TestCase
         function testAwruch_SolucaoRespeitaCatalogoDeCadaBarra(tc)
             % Com catalogos diferentes por barra, um erro de indexacao no
             % decodificador produziria uma area do catalogo errado.
-            caso = problema_awruch_10barras();
+            caso = main_awruch_discreto('caso');
 
             fobj = @(areas) custo_linear(caso, areas);
             p = struct('n_particulas', 12, 'max_iter', 12, 'verbose', false, ...
@@ -138,7 +145,7 @@ classdef TestIntegracao < matlab.unittest.TestCase
             % REGRESSAO: a versao anterior (catalogo_awruch.m) copiava
             % ref_areas/ref_peso do benchmark de Hadi, valores que nem sequer
             % pertencem aos catalogos de Awruch. Devem estar limpos.
-            caso = problema_awruch_10barras();
+            caso = main_awruch_discreto('caso');
 
             tc.verifyEmpty(caso.ref_areas, ...
                 'Awruch nao tem solucao de referencia publicada.');
@@ -148,13 +155,13 @@ classdef TestIntegracao < matlab.unittest.TestCase
                 'Awruch nao possui catalogo unico compartilhado.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 3. COERENCIA ENTRE ANALISE LINEAR E NAO LINEAR NO MESMO PROBLEMA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testMesmoProblemaAceitoPelosDoisSolvers(tc)
             % O mesmo struct de problema deve alimentar os dois solvers sem
             % nenhuma adaptacao — requisito da separacao solver/parametros.
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             [w_li, S_li, u_li] = fem_linear_solver(caso, areas);
@@ -171,9 +178,9 @@ classdef TestIntegracao < matlab.unittest.TestCase
                 'Diferenca linear/nao linear implausivelmente grande.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 4. ORQUESTRADORES (Bloco 3)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testOrquestradoresExistemEEstaoNoPath(tc)
             for nome = {'main_hadi_nao_linear', 'main_hadi_linear', ...
                         'main_awruch_discreto', 'main_estudo_estatistico'}
@@ -195,20 +202,29 @@ classdef TestIntegracao < matlab.unittest.TestCase
             % Apos setup_paths, os pontos de entrada dos 3 blocos devem estar
             % acessiveis a partir de qualquer diretorio.
             setup_paths(false);
-            tc.verifyEqual(exist('pso_rid', 'file'), 2,                 'Bloco 1 ausente.');
-            tc.verifyEqual(exist('fem_nao_linear_solver', 'file'), 2,   'Bloco 2a ausente.');
-            tc.verifyEqual(exist('problema_hadi_10barras', 'file'), 2,  'Bloco 2b ausente.');
-            tc.verifyEqual(exist('main_hadi_nao_linear', 'file'), 2,    'Bloco 3 ausente.');
+            tc.verifyEqual(exist('pso_rid', 'file'), 2,               'Bloco 1 ausente.');
+            tc.verifyEqual(exist('fem_linear_solver', 'file'), 2,     'Bloco 2 (linear) ausente.');
+            tc.verifyEqual(exist('fem_nao_linear_solver', 'file'), 2, 'Bloco 2 (nao linear) ausente.');
+            tc.verifyEqual(exist('main_hadi_nao_linear', 'file'), 2,  'Bloco 3 ausente.');
+
+            % Os casos de estudo nao sao mais arquivos proprios: vivem como
+            % funcao local dentro do respectivo orquestrador e sao alcancados
+            % pelo acessor ('caso'). Verificar que o acessor responde e o
+            % equivalente atual de "o Bloco 2b esta no path".
+            tc.verifyTrue(isstruct(main_hadi_nao_linear('caso')), ...
+                'Acessor do caso Hadi nao respondeu.');
+            tc.verifyTrue(isstruct(main_awruch_discreto('caso')), ...
+                'Acessor do caso Awruch nao respondeu.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 5. CICLO COMPLETO EM ESCALA REDUZIDA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testCicloCompletoProduzSolucaoViavel(tc)
             % Executa PSO + FEM ate o fim, em escala pequena, e confere que a
             % solucao devolvida e coerente: viavel, dentro do catalogo, e com
             % peso consistente com o recalculo pelo solver.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             fobj = @(areas) custo_linear(caso, areas);
             p = struct('n_particulas', 40, 'max_iter', 60, 'verbose', false, ...
@@ -222,17 +238,128 @@ classdef TestIntegracao < matlab.unittest.TestCase
             tc.verifyEqual(peso_pso, peso_fem, 'RelTol', 1e-10, ...
                 'Peso do PSO diverge do recalculado pelo solver.');
 
-            % Historico coerente e monotonicamente nao crescente.
+            % MONOTONICIDADE SOB [DEB2000] — corrigido em 2026-08-31.
+            %
+            % O custo do g-best NAO e monotonico, e isso e correto: pelo
+            % criterio 1, um projeto VIAVEL e preferido a qualquer inviavel
+            % independentemente do custo. No instante em que o enxame troca
+            % um inviavel-barato por um viavel-caro, o custo SOBE.
+            % (Observado: 3916.83 -> 4543.62 na iteracao 1->2 com semente 42.)
+            %
+            % A versao anterior deste teste exigia custo nao crescente. Ela
+            % passava por acidente: com a decodificacao 'datta', as primeiras
+            % iteracoes eram dominadas por estouros de catalogo com custo Inf,
+            % que o filtro isfinite removia — escondendo a fase inviavel.
+            %
+            % O invariante de fato garantido pelos criterios 1 e 3 e sobre a
+            % VIOLACAO, que nunca pode piorar.
             tc.verifyNumElements(hist, det.iter_executadas);
-            finitos = hist(isfinite(hist));
-            tc.verifyTrue(all(diff(finitos) <= 1e-9), ...
-                'O historico do g-best deveria ser nao crescente.');
+            tc.verifyNumElements(det.viol_history, det.iter_executadas);
+
+            v = det.viol_history;
+            tc.verifyTrue(all(diff(v(isfinite(v))) <= 1e-9), ...
+                'A violacao do g-best deveria ser monotonicamente nao crescente.');
+
+            % Uma vez atingida a viabilidade, nunca mais se perde...
+            i_viavel = find(v <= 0, 1);
+            if ~isempty(i_viavel)
+                tc.verifyTrue(all(v(i_viavel:end) <= 0), ...
+                    'O g-best perdeu viabilidade depois de te-la atingido.');
+                % ...e dai em diante o custo SO PODE CAIR (criterio 2).
+                tc.verifyTrue(all(diff(hist(i_viavel:end)) <= 1e-9), ...
+                    'Custo do g-best subiu dentro da regiao viavel.');
+            end
 
             % Se encontrou solucao viavel, ela deve respeitar as restricoes.
             if det.gbest_viol <= 0
                 [~, S, u] = fem_linear_solver(caso, areas);
                 tc.verifyLessThanOrEqual(max(abs(S)), caso.sigma_max * (1 + 1e-9));
                 tc.verifyLessThanOrEqual(max(abs(u)), caso.d_max     * (1 + 1e-9));
+            end
+        end
+
+        % -----------------------------------------------------------------
+        % MEDIDA DE VIOLACAO — [HA2003] Eq. (9), normalizada
+        % -----------------------------------------------------------------
+        function testViolacaoNormalizadaEhAdimensional(tc)
+            % A violacao nao pode depender da unidade em que o problema esta
+            % escrito. Reescalar comprimentos (mm -> m: deslocamentos e
+            % d_max por 1e-3) e tensoes (MPa -> Pa: sigma e sigma_max por
+            % 1e6) tem de deixar a violacao IDENTICA, porque cada parcela e
+            % uma razao entre grandezas da mesma familia.
+            %
+            % REGRESSAO: a medida anterior somava (|sigma|-sigma_max)^2 com
+            % (|u|-d_max)^2, ou seja MPa^2 com mm^2. Sob a mesma reescala
+            % ela muda de valor e chega a INVERTER a ordenacao entre dois
+            % projetos inviaveis — medido em 1.7% dos pares amostrados.
+            % Como o criterio 3 de [DEB2000] ordena inviaveis SOMENTE pela
+            % violacao, isso fazia a busca depender da escolha de unidades.
+            caso = main_hadi_nao_linear('caso');
+            rng(20260831);
+
+            for k = 1:40
+                areas = caso.catalogo(randi(numel(caso.catalogo), 1, 10));
+                [~, S, u] = fem_linear_solver(caso, areas);
+
+                v_mm = tc.violacaoNormalizada(S, u, caso.sigma_max, caso.d_max);
+                v_m  = tc.violacaoNormalizada(S * 1e6, u * 1e-3, ...
+                                              caso.sigma_max * 1e6, ...
+                                              caso.d_max * 1e-3);
+
+                tc.verifyEqual(v_m, v_mm, 'RelTol', 1e-12, ...
+                    'Violacao normalizada mudou ao trocar a unidade.');
+            end
+        end
+
+        function testViolacaoNormalizadaMedeFracaoDoLimite(tc)
+            % Semantica da Eq. (9): o valor "0.10" significa 10% acima do
+            % admissivel, na tensao ou no deslocamento, indiferentemente.
+            % E isso que torna as duas familias comensuraveis.
+            sigma_max = 172.25;   d_max = 50.80;
+
+            % Exatamente no limite: viavel, violacao nula.
+            tc.verifyEqual(tc.violacaoNormalizada(sigma_max, d_max, ...
+                                                  sigma_max, d_max), 0, ...
+                'Projeto exatamente no limite deveria ter violacao zero.');
+
+            % Folga: continua zero (nao existe violacao negativa).
+            tc.verifyEqual(tc.violacaoNormalizada(sigma_max/2, d_max/2, ...
+                                                  sigma_max, d_max), 0);
+
+            % 10% acima em tensao, e so.
+            tc.verifyEqual(tc.violacaoNormalizada(1.10 * sigma_max, d_max, ...
+                                                  sigma_max, d_max), 0.10, ...
+                'AbsTol', 1e-12);
+
+            % 10% acima em deslocamento: TEM de valer o mesmo que o anterior.
+            tc.verifyEqual(tc.violacaoNormalizada(sigma_max, 1.10 * d_max, ...
+                                                  sigma_max, d_max), 0.10, ...
+                'AbsTol', 1e-12, ...
+                'Excessos relativos iguais devem pesar igual nas duas familias.');
+
+            % As parcelas somam ([DEB2000] pag. 316).
+            tc.verifyEqual(tc.violacaoNormalizada(1.10 * sigma_max, ...
+                                                  1.25 * d_max, ...
+                                                  sigma_max, d_max), 0.35, ...
+                'AbsTol', 1e-12);
+        end
+
+        function testViolacaoNulaEquivaleAViabilidade(tc)
+            % A convencao que liga avaliar_projeto a domina_deb: violacao <= 0
+            % tem de significar exatamente "respeita Eq. (2)".
+            caso = main_hadi_nao_linear('caso');
+            rng(20260831);
+
+            for k = 1:60
+                areas = caso.catalogo(randi(numel(caso.catalogo), 1, 10));
+                [~, viol] = custo_linear(caso, areas);
+                [~, S, u] = fem_linear_solver(caso, areas);
+
+                respeita = max(abs(S)) <= caso.sigma_max * (1 + 1e-12) && ...
+                           max(abs(u)) <= caso.d_max     * (1 + 1e-12);
+
+                tc.verifyEqual(viol <= 0, respeita, ...
+                    'violacao <= 0 deveria coincidir com respeitar a Eq. (2).');
             end
         end
 
@@ -246,7 +373,7 @@ classdef TestIntegracao < matlab.unittest.TestCase
             % esgotar o orcamento, deixando a parada por conta do criterio de
             % estagnacao. Com tol_estagnacao alto, o laco girava dezenas de
             % milhares de iteracoes a toa.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             orcamento = 300;
             n_chamadas = 0;
@@ -285,7 +412,7 @@ classdef TestIntegracao < matlab.unittest.TestCase
         function testReprodutibilidadePorSemente(tc)
             % Mesma semente -> mesmo resultado. Requisito para que o estudo
             % estatistico pareado por semente faca sentido.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             fobj = @(areas) custo_linear(caso, areas);
             p = struct('n_particulas', 10, 'max_iter', 15, 'verbose', false, ...
                        'reinit_freq', 0, 'tol_estagnacao', 1e9);
@@ -300,6 +427,15 @@ classdef TestIntegracao < matlab.unittest.TestCase
         end
     end
 
+    methods (Static, Access = private)
+        function v = violacaoNormalizada(sigma, u, sigma_max, d_max)
+            % [HA2003] Eq. (9), na mesma forma usada por avaliar_projeto
+            % dos orquestradores e por custo_linear deste arquivo.
+            v = sum(max(abs(sigma(:)) / sigma_max - 1, 0)) ...
+              + sum(max(abs(u(:))     / d_max     - 1, 0));
+        end
+    end
+
 end
 
 
@@ -309,10 +445,15 @@ end
 
 function [custo, violacao] = custo_linear(caso, areas)
 % Funcao objetivo enxuta para os testes: mesma formulacao dos orquestradores
-% ([HA2003] Eq. 1 objetivo e Eq. 2 restricoes), usando o solver LINEAR por
-% ser muito mais rapido — a suite nao deve depender do custo do nao linear.
+% ([HA2003] Eq. 1 objetivo, Eq. 2 restricoes e Eq. 9 violacao NORMALIZADA),
+% usando o solver LINEAR por ser muito mais rapido — a suite nao deve
+% depender do custo do nao linear.
+%
+% Esta copia precisa acompanhar avaliar_projeto dos orquestradores: se as
+% duas medidas divergirem, os testes deixam de exercitar o que roda de
+% verdade. O teste testViolacaoNormalizadaEhAdimensional trava isso.
 [peso, Sigma, u] = fem_linear_solver(caso, areas);
-violacao = sum(max(abs(Sigma) - caso.sigma_max, 0).^2) ...
-         + sum(max(abs(u)     - caso.d_max,     0).^2);
+violacao = sum(max(abs(Sigma(:)) / caso.sigma_max - 1, 0)) ...
+         + sum(max(abs(u(:))     / caso.d_max     - 1, 0));
 custo = peso;
 end

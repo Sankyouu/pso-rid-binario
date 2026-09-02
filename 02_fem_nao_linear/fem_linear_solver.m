@@ -6,9 +6,9 @@ function [weight, Sigma, u_livre, diag_out] = fem_linear_solver(problema, areas)
 % Como o solver nao linear, este arquivo NAO conhece nenhum problema
 % especifico: tudo chega pelo struct 'problema'.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % REFERENCIA
-% =========================================================================
+% -------------------------------------------------------------------------
 % [HA2003] Hadi & Alvani (2003), Paper 37, Civil-Comp Press.
 %          Sec. 4: "During loading, initially no change in geometry is
 %          registered, KG = 0, rendering this stage similar to a linear
@@ -19,9 +19,9 @@ function [weight, Sigma, u_livre, diag_out] = fem_linear_solver(problema, areas)
 % verificada por teste unitario: para carga tendendo a zero, o solver nao
 % linear deve convergir para este resultado.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % ENTRADAS
-% =========================================================================
+% -------------------------------------------------------------------------
 %   problema : struct (mesmo formato do solver nao linear)
 %       .nodes0    2 x n_nodes   coordenadas [x; y]
 %       .elements  2 x n_el      conectividade [no_inicial; no_final]
@@ -37,9 +37,9 @@ function [weight, Sigma, u_livre, diag_out] = fem_linear_solver(problema, areas)
 %   u_livre  : deslocamentos nos GDLs livres
 %   diag_out : struct com u, L0, cossenos diretores, GDLs livres e P_axial
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 0. VALIDACAO
-% =========================================================================
+% -------------------------------------------------------------------------
 campos_obrig = {'nodes0', 'elements', 'apoios', 'F_total', 'E', 'dens'};
 for i = 1:numel(campos_obrig)
     assert(isfield(problema, campos_obrig{i}), ...
@@ -69,10 +69,10 @@ assert(numel(problema.F_total) == s_dof, 'fem_linear_solver:forcaIncompativel', 
 F = problema.F_total(:);
 dofs_livres = setdiff(1:s_dof, apoios);
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 1. MONTAGEM DA MATRIZ DE RIGIDEZ GLOBAL [KE]
 %    (configuracao INICIAL — sem atualizacao geometrica)
-% =========================================================================
+% -------------------------------------------------------------------------
 kk = zeros(s_dof, s_dof);
 L  = zeros(n_el, 1);
 c  = zeros(n_el, 1);
@@ -101,9 +101,9 @@ for n = 1:n_el
     kk(idx, idx) = kk(idx, idx) + ke;
 end
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 2. CONDICOES DE CONTORNO
-% =========================================================================
+% -------------------------------------------------------------------------
 kk_bc = kk;
 F_bc  = F;
 for dof = apoios
@@ -113,15 +113,15 @@ for dof = apoios
     F_bc(dof)       = 0.0;
 end
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 3. SOLUCAO
-% =========================================================================
+% -------------------------------------------------------------------------
 u       = kk_bc \ F_bc;
 u_livre = u(dofs_livres);
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 4. DEFORMACOES, TENSOES E MASSA
-% =========================================================================
+% -------------------------------------------------------------------------
 eps = zeros(n_el, 1);
 for n = 1:n_el
     i = elements(1,n);

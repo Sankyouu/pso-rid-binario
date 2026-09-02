@@ -13,9 +13,14 @@ function resultado = main_hadi_linear(seed, n_runs)
 % non-linear analysis are compared with the linear analysis."
 %
 % Blocos acoplados:
-%   Bloco 1 (otimizador) : pso_rid.m
-%   Bloco 2a (solver)    : fem_linear_solver.m
-%   Bloco 2b (problema)  : problema_hadi_10barras.m
+%   Bloco 1 (otimizador) : pso_rid.m            <- 01_pso_rid/
+%   Bloco 2  (solver)    : fem_linear_solver.m  <- 02_fem_nao_linear/
+%
+% O CASO e o mesmo de main_hadi_nao_linear — e essa e a premissa da
+% comparacao: se as duas analises nao partissem de geometria, material e
+% cargas identicos, a diferenca medida entre elas nao poderia ser atribuida a
+% nao linearidade. Por isso o caso NAO e redefinido aqui; vem do acessor
+% main_hadi_nao_linear('caso'), fonte unica dessa definicao no projeto.
 %
 % USO
 %   main_hadi_linear              % semente 42, 5 execucoes
@@ -28,8 +33,8 @@ if nargin < 2 || isempty(n_runs), n_runs = 5;  end
 garantir_caminhos();
 rng(seed);
 
-% 1. PROBLEMA (Bloco 2b)
-caso = problema_hadi_10barras();
+% 1. PROBLEMA — fonte unica: funcao local de main_hadi_nao_linear.m
+caso = main_hadi_nao_linear('caso');
 
 % 2. FUNCAO OBJETIVO (local, no fim do arquivo)
 funcao_objetivo = @(areas) avaliar_projeto(areas, caso, 'linear');
@@ -43,7 +48,7 @@ pso_params.c1                     = 1.0;
 pso_params.c2                     = 2.0;
 pso_params.pm                     = 0.15;
 pso_params.auto_adaptativo        = true;
-pso_params.decodificacao_discreta = 'datta';
+pso_params.decodificacao_discreta = 'proporcional';  % ver [D1] em pso_rid.m
 pso_params.tol_estagnacao         = 200;
 pso_params.verbose                = true;
 pso_params.print_interval         = 100;
@@ -131,13 +136,13 @@ end
 
 violacao = 0;
 
-excesso_sigma = abs(Sigma) - caso.sigma_max;
-excesso_sigma = excesso_sigma(excesso_sigma > 0);
-violacao = violacao + sum(excesso_sigma .^ 2);
+% [HA2003] Eq. (9) — restricoes normalizadas; ver a justificativa completa
+% em avaliar_projeto de main_hadi_nao_linear.m.
+g_sigma = abs(Sigma(:))   / caso.sigma_max - 1;
+g_desl  = abs(u_livre(:)) / caso.d_max     - 1;
 
-excesso_desl = abs(u_livre) - caso.d_max;
-excesso_desl = excesso_desl(excesso_desl > 0);
-violacao = violacao + sum(excesso_desl .^ 2);
+violacao = violacao + sum(max(0, g_sigma));
+violacao = violacao + sum(max(0, g_desl));
 
 custo = peso;
 end

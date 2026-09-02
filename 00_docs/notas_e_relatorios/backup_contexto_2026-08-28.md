@@ -126,10 +126,23 @@ Octave):
 4. **Bug latente em `pso_rid.m`** no tipo `'I'` (inteiro): número de bits e decodificação
    usam só `var.max`, ignorando `var.min`. Hoje não afeta nada porque só o tipo `'D'` é
    usado nos casos de estudo, mas é uma bomba-relógio se `'I'` for usado no futuro.
-5. **Melhor peso idêntico (2342.11 kg)** nas figuras salvas de linear e não-linear
+5. ~~**Melhor peso idêntico (2342.11 kg)** nas figuras salvas de linear e não-linear
    (`04_resultados/figuras/convergencia_hadi_*.png`) — pode ser coincidência (mesma
    semente, mesma combinação discreta próxima do ótimo) ou sinal de algo errado na
-   separação dos casos. Precisa checar se os vetores de área são de fato iguais.
+   separação dos casos. Precisa checar se os vetores de área são de fato iguais.~~
+
+   > **RESOLVIDO em 2026-08-31 — era falso alarme.** Os dados foram extraídos
+   > diretamente dos `.fig` salvos (via `openfig` + `YData`, não da leitura visual
+   > do `.png`, que foi a origem do engano):
+   >
+   > | Figura | Melhor valor plotado |
+   > |---|---|
+   > | `convergencia_hadi_linear.fig` | 2342,1077 kg |
+   > | `convergencia_hadi_nao_linear.fig` | 2340,4613 kg |
+   >
+   > Os valores são **diferentes**. Não há problema na separação dos casos linear e
+   > não linear. A suspeita nasceu de comparar os dois PNGs a olho, onde os rótulos
+   > arredondados pareciam coincidir.
 6. Não existe harness de teste automatizado — `debug_fem_nonlinear.m` é útil (rodei via
    Octave e confirma equilíbrio global, resíduo ~0.12 N) mas só imprime números, não
    falha/passa. `00_docs/notas_e_relatorios/` e `04_resultados/logs/` estavam vazios antes

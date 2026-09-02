@@ -1,17 +1,14 @@
 function [weight, Sigma, u_livre, diag_out] = fem_nao_linear_solver(problema, areas, opcoes)
 % FEM_NAO_LINEAR_SOLVER  Analise geometricamente nao linear de trelicas planas.
 %
-% BLOCO 2a do projeto CPIO III — SOLVER GENERICO.
-%
-% Este arquivo NAO conhece nenhum problema especifico: toda a geometria,
+% Este arquivo nao conhece nenhum problema especifico: toda a geometria,
 % material, carregamento e condicoes de contorno chegam pelo struct
 % 'problema' (ver 02_fem_nao_linear/problemas/ para os casos concretos).
-% Assim, novos casos de estudo sao arquivos pequenos de PARAMETROS, sem
-% duplicar o solver.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % REFERENCIAS TEORICAS
-% =========================================================================
+% -------------------------------------------------------------------------
+%
 % [HA2003]  Hadi, M.N.S.; Alvani, K.S. "Discrete Optimum Design of
 %           Geometrically Non-Linear Trusses using Genetic Algorithms".
 %           Proc. 7th Int. Conf. on the Application of Artificial
@@ -37,9 +34,10 @@ function [weight, Sigma, u_livre, diag_out] = fem_nao_linear_solver(problema, ar
 % incremental displacements {du} is calculated by making use of the system
 % tangent stiffness matrix [Kt]_i for the load increment i".
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % ENTRADAS
-% =========================================================================
+% -------------------------------------------------------------------------
+%
 %   problema : struct com os parametros do caso (ver problemas/*.m)
 %       .nodes0    2 x n_nodes   coordenadas iniciais [x; y]
 %       .elements  2 x n_el      conectividade [no_inicial; no_final]
@@ -60,9 +58,10 @@ function [weight, Sigma, u_livre, diag_out] = fem_nao_linear_solver(problema, ar
 %   comprimento [mm] | forca [N] | tensao [MPa = N/mm^2] | massa [kg]
 % o que exige densidade em [kg/mm^3].
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % SAIDAS
-% =========================================================================
+% -------------------------------------------------------------------------
+%
 %   weight   : massa total da estrutura (usa os comprimentos INICIAIS L0,
 %              pois o peso e propriedade do projeto, nao do estado deformado)
 %   Sigma    : n_el x 1  tensoes axiais (tracao > 0, compressao < 0)
@@ -77,9 +76,10 @@ function [weight, Sigma, u_livre, diag_out] = fem_nao_linear_solver(problema, ar
 %       .iters_por_inc  iteracoes N-R gastas em cada incremento
 %       .residuo_final  norma relativa do residuo ao fim do ultimo incremento
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 0. VALIDACAO DE ENTRADA
-% =========================================================================
+% -------------------------------------------------------------------------
+
 campos_obrig = {'nodes0', 'elements', 'apoios', 'F_total', 'E', 'dens'};
 for i = 1:numel(campos_obrig)
     assert(isfield(problema, campos_obrig{i}), ...
@@ -122,9 +122,10 @@ tol      = get_opcao(opcoes, 'tol',      1e-6);
 
 dofs_livres = setdiff(1:s_dof, apoios);
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 1. COMPRIMENTOS INICIAIS (L0)
-% =========================================================================
+% -------------------------------------------------------------------------
+
 L0 = zeros(n_el, 1);
 for n = 1:n_el
     ni = elements(1,n);  nj = elements(2,n);
@@ -135,9 +136,10 @@ end
 assert(all(L0 > 0), 'fem_nao_linear_solver:barraDegenerada', ...
     'Ha barra(s) com comprimento inicial nulo.');
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 2. INICIALIZACAO
-% =========================================================================
+% -------------------------------------------------------------------------
+
 u          = zeros(s_dof, 1);   % deslocamentos acumulados
 P_axial    = zeros(n_el, 1);    % forcas axiais acumuladas
 nodes_cur  = nodes0;            % configuracao corrente
@@ -146,10 +148,11 @@ iters_por_inc = zeros(n_inc, 1);
 convergiu_inc = false(n_inc, 1);
 residuo_final = NaN;
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 3. LOOP DE INCREMENTOS DE CARGA
 %    [HA2003] Sec. 4.3 / Eq. (18)
-% =========================================================================
+% -------------------------------------------------------------------------
+
 dF = F_total / n_inc;
 
 for inc = 1:n_inc
@@ -160,11 +163,12 @@ for inc = 1:n_inc
 
     for iter = 1:max_iter
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 4. MONTAGEM DE [KT] = [KE] + [KG]     Eq. (13) [HA2003]
         %    Avaliada na configuracao CORRENTE (nodes_cur) e com as forcas
         %    axiais correntes (P_axial).
-        % =================================================================
+        % -----------------------------------------------------------------
+
         KT = zeros(s_dof, s_dof);
 
         for n = 1:n_el
@@ -177,11 +181,13 @@ for inc = 1:n_inc
 
             % Cossenos diretores na configuracao corrente
             % [HA2003] Eq. (14): lambda = cos(phi), mu = sin(phi)
+
             lam = dx / Ln;
             mu  = dy / Ln;
 
             % --- [KE] rigidez elastica (mesma forma da analise linear,
             %     porem com a geometria corrente) ---
+
             ke = (areas(n) * E / Ln) * ...
                 [  lam*lam   lam*mu  -lam*lam  -lam*mu ;
                    lam*mu    mu*mu   -lam*mu   -mu*mu  ;
@@ -196,6 +202,7 @@ for inc = 1:n_inc
             %                   lam*mu -lam^2   -lam*mu  lam^2  ]
             % onde P e a carga axial intermediaria do elemento no estagio
             % de carregamento corrente e L o comprimento do elemento.
+
             Pn = P_axial(n);
             kg = (Pn / Ln) * ...
                 [  mu*mu   -lam*mu  -mu*mu    lam*mu ;
@@ -208,6 +215,7 @@ for inc = 1:n_inc
         end
 
         % --- Condicoes de contorno: zera linha/coluna e poe 1 na diagonal
+
         KT_bc = KT;
         R_bc  = R;
         for dof = apoios
@@ -219,10 +227,12 @@ for inc = 1:n_inc
 
         % --- Passo de Newton-Raphson: Eq. (18) [HA2003]
         %     [Kt]_i {du} = {R}_i
+
         du = KT_bc \ R_bc;
         u  = u + du;
 
         % --- Atualizacao da configuracao corrente
+
         for nd = 1:n_nodes
             nodes_cur(1,nd) = nodes0(1,nd) + u(2*nd-1);
             nodes_cur(2,nd) = nodes0(2,nd) + u(2*nd);
@@ -239,6 +249,7 @@ for inc = 1:n_inc
         %     trelica abatida (p.ex. em [CRI1991]) costumam ser derivadas
         %     com deformacao de Green, que NAO coincide com a de engenharia
         %     fora do regime de deformacoes infinitesimais.
+
         for n = 1:n_el
             ni = elements(1,n);
             nj = elements(2,n);
@@ -251,6 +262,7 @@ for inc = 1:n_inc
         end
 
         % --- Forcas internas na configuracao corrente
+
         F_ext_acc = inc * dF;
         F_int     = zeros(s_dof, 1);
 
@@ -264,12 +276,14 @@ for inc = 1:n_inc
             mu  = dyc / Ln;
 
             % Equilibrio do elemento: q = P * [-lam; -mu; +lam; +mu]
+
             idx   = [2*ni-1, 2*ni, 2*nj-1, 2*nj];
             felem = P_axial(n) * [-lam; -mu; lam; mu];
             F_int(idx) = F_int(idx) + felem;
         end
 
         % --- Residuo e criterio de convergencia
+
         R = F_ext_acc - F_int;
         R(apoios) = 0;
 
@@ -289,9 +303,10 @@ for inc = 1:n_inc
     residuo_final = residuo_rel;
 end
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % 5. POS-PROCESSAMENTO
-% =========================================================================
+% -------------------------------------------------------------------------
+
 u_livre = u(dofs_livres);
 Sigma   = P_axial ./ areas(:);
 weight  = sum(areas(:) .* L0 .* dens);

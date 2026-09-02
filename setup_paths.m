@@ -5,17 +5,26 @@ function setup_paths(verbose)
 % (ver 00_docs/notas_e_relatorios/plano_final_reorganizacao_2026-08-28.md)
 %
 %   Bloco 1 — PSO-RID .......... 01_pso_rid/
-%       Solver de otimizacao e seus auxiliares, um por formula do artigo.
+%       pso_rid.m e AUTOCONTIDO: o loop e todas as pecas do algoritmo (uma
+%       funcao local por formula do artigo) estao no mesmo arquivo.
+%       Handles das funcoes locais: aux = pso_rid('auxiliares').
 %
 %   Bloco 2 — FEM Nao Linear ... 02_fem_nao_linear/
-%       solver/    : solvers genericos, sem dados de nenhum problema
-%       problemas/ : arquivos SO de parametros, um por caso de estudo
+%       SO os solvers genericos, sem dados de nenhum problema:
+%       fem_linear_solver.m e fem_nao_linear_solver.m.
 %
 %   Bloco 3 — Orquestrador ..... 03_orquestrador/
-%       main_*.m       : um experimento por arquivo, autocontido
+%       main_*.m       : um experimento por arquivo, autocontido, com a
+%                        DEFINICAO DO PROBLEMA embutida como funcao local
 %       auxiliares/    : apenas blocos grandes de impressao/grafico
 %
+%       Casos de estudo (acessores, sem rodar otimizacao):
+%           caso = main_hadi_nao_linear('caso')   benchmark [HA2003]
+%           caso = main_awruch_discreto('caso')   catalogos por barra
+%
 %   Testes ..................... 06_testes/  (matlab.unittest — exige MATLAB)
+%       Inclui problema_trelica_rasa_2barras.m, o oraculo analitico usado
+%       apenas pelos testes do solver (nao e um caso de estudo).
 %   Legado ..................... 05_legado/  (nao entra no path)
 %
 % Uso:

@@ -1,5 +1,5 @@
 classdef TestDecodificadorPSO < matlab.unittest.TestCase
-% TESTDECODIFICADORPSO  Testes de rid_mapear_dimensoes e rid_decodificar.
+% TESTDECODIFICADORPSO  Testes de mapear_dimensoes e decodificar.
 %
 % BLOCO TESTADO: 1 (PSO-RID). Nenhum FEM e chamado aqui — os auxiliares sao
 % exercitados DIRETAMENTE, permitindo revisao manual peca por peca.
@@ -11,18 +11,25 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
 %
 % Executar:  runtests('06_testes/TestDecodificadorPSO.m')
 
+    properties
+        % Handles das funcoes locais de pso_rid.m (ver "ACESSO AOS
+        % AUXILIARES PARA TESTE" no cabecalho daquele arquivo).
+        aux
+    end
+
     methods (TestClassSetup)
-        function adicionarCaminhos(~)
+        function adicionarCaminhos(tc)
             aqui = fileparts(mfilename('fullpath'));
             addpath(genpath(fullfile(aqui, '..', '01_pso_rid')));
+            tc.aux = pso_rid('auxiliares');
         end
     end
 
     methods (Test)
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % Eq. (5) [DF2011] — dimensionamento da particula
-        % =================================================================
+        % -----------------------------------------------------------------
         function testEq5_NumeroDeBitsDiscreto(tc)
             % [DF2011] Sec. 4.1: discreta = inteira cujo valor e o INDICE do
             % valor real, com limites 1..N. Logo x_int vai de 0 a N-1 e
@@ -34,7 +41,7 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             for i = 1:size(casos,1)
                 N = casos{i,1};  esperado = casos{i,2};
                 cfg = struct('tipo','D','opcoes', 1:N);
-                [mapa, total] = rid_mapear_dimensoes(cfg);
+                [mapa, total] = tc.aux.mapear_dimensoes(cfg);
                 tc.verifyEqual(mapa(1).n_bits, esperado, ...
                     sprintf('Discreta N=%d deveria usar %d bits.', N, esperado));
                 tc.verifyEqual(total, esperado);
@@ -52,7 +59,7 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             for i = 1:size(casos,1)
                 M = casos{i,1};  esperado = casos{i,2};
                 cfg = struct('tipo','I','min',0,'max',M);
-                mapa = rid_mapear_dimensoes(cfg);
+                mapa = tc.aux.mapear_dimensoes(cfg);
                 tc.verifyEqual(mapa(1).n_bits, esperado, ...
                     sprintf('Inteira max=%d deveria usar %d bits.', M, esperado));
             end
@@ -60,7 +67,7 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
 
         function testEq5_VariavelRealOcupaUmaDimensaoSemBits(tc)
             cfg = struct('tipo','R','min',0,'max',1);
-            [mapa, total] = rid_mapear_dimensoes(cfg);
+            [mapa, total] = tc.aux.mapear_dimensoes(cfg);
             tc.verifyEqual(mapa(1).n_bits, 0);
             tc.verifyEqual(total, 1);
         end
@@ -71,7 +78,7 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             cfg(1) = struct('tipo','R','min',0,'max',1,'opcoes',[]);
             cfg(2) = struct('tipo','I','min',12,'max',60,'opcoes',[]);
             cfg(3) = struct('tipo','D','min',[],'max',[],'opcoes',1:13);
-            [mapa, total] = rid_mapear_dimensoes(cfg);
+            [mapa, total] = tc.aux.mapear_dimensoes(cfg);
             tc.verifyEqual([mapa.n_bits], [0 6 4]);
             tc.verifyEqual(total, 11);
             % Blocos contiguos e sem sobreposicao
@@ -79,14 +86,14 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             tc.verifyEqual([mapa.fim],    [1 7 11]);
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % Eq. (6) [DF2011] — decodificacao binario -> inteiro
-        % =================================================================
+        % -----------------------------------------------------------------
         function testEq6_SomaPonderadaExata(tc)
             % x = sum_{i=1}^{B} 2^(B-i) * b_i, bit mais significativo a esquerda.
             % Variavel inteira com folga suficiente para nao violar limites.
             cfg  = struct('tipo','I','min',0,'max',255);
-            mapa = rid_mapear_dimensoes(cfg);          % 8 bits
+            mapa = tc.aux.mapear_dimensoes(cfg);          % 8 bits
             tc.verifyEqual(mapa(1).n_bits, 8);
 
             casos = { [0 0 0 0 0 0 0 0],   0 ;
@@ -99,27 +106,27 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             for i = 1:size(casos,1)
                 bits     = casos{i,1};
                 esperado = casos{i,2};
-                [v, viol] = rid_decodificar(bits, mapa, cfg);
+                [v, viol] = tc.aux.decodificar(bits, mapa, cfg);
                 tc.verifyEqual(v, esperado, ...
                     sprintf('Eq. (6) falhou para bits [%s].', num2str(bits)));
                 tc.verifyEqual(viol, 0, 'Nao deveria haver violacao dentro de [0,255].');
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % [D1] Decodificacao discreta — modo 'datta' (fiel ao artigo)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testD1_Datta_IndiceEhValorMaisUm(tc)
             % [DF2011] Sec. 4.1: o inteiro decodificado e o INDICE do valor
             % discreto, com limite inferior 1. Logo indice = x_int + 1.
             catalogo = [10 20 30 40 50 60 70 80];      % N=8 -> 3 bits, sem overflow
             cfg  = struct('tipo','D','opcoes',catalogo);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
             tc.verifyEqual(mapa(1).n_bits, 3);
 
             for x_int = 0:7
                 bits = tc.paraBits(x_int, 3);
-                [v, viol] = rid_decodificar(bits, mapa, cfg, 'datta');
+                [v, viol] = tc.aux.decodificar(bits, mapa, cfg, 'datta');
                 tc.verifyEqual(v, catalogo(x_int + 1), ...
                     sprintf('x_int=%d deveria mapear para opcoes(%d).', x_int, x_int+1));
                 tc.verifyEqual(viol, 0);
@@ -133,12 +140,12 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             catalogo = [65, 645, 1290, 3226, 5161, 7742, 9677, ...
                         11613, 12903, 16129, 19355, 22581, 29032];
             cfg  = struct('tipo','D','opcoes',catalogo);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
             tc.verifyEqual(mapa(1).n_bits, 4);
 
             % Dentro do catalogo: sem violacao
             for x_int = 0:12
-                [v, viol] = rid_decodificar(tc.paraBits(x_int,4), mapa, cfg, 'datta');
+                [v, viol] = tc.aux.decodificar(tc.paraBits(x_int,4), mapa, cfg, 'datta');
                 tc.verifyEqual(viol, 0);
                 tc.verifyEqual(v, catalogo(x_int+1));
             end
@@ -147,7 +154,7 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             esperadas = [1 2 3];   % x_int 13,14,15 -> idx 14,15,16 -> viol 1,2,3
             for j = 1:3
                 x_int = 12 + j;
-                [~, viol] = rid_decodificar(tc.paraBits(x_int,4), mapa, cfg, 'datta');
+                [~, viol] = tc.aux.decodificar(tc.paraBits(x_int,4), mapa, cfg, 'datta');
                 tc.verifyEqual(viol, esperadas(j), ...
                     sprintf('x_int=%d deveria gerar violacao estrutural %d.', ...
                             x_int, esperadas(j)));
@@ -160,26 +167,26 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             catalogo = [65, 645, 1290, 3226, 5161, 7742, 9677, ...
                         11613, 12903, 16129, 19355, 22581, 29032];
             cfg  = struct('tipo','D','opcoes',catalogo);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
 
             for x_int = 0:15
-                v = rid_decodificar(tc.paraBits(x_int,4), mapa, cfg, 'datta');
+                v = tc.aux.decodificar(tc.paraBits(x_int,4), mapa, cfg, 'datta');
                 tc.verifyTrue(ismember(v, catalogo), ...
                     sprintf('x_int=%d vazou valor fora do catalogo.', x_int));
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % [D1] Decodificacao discreta — modo 'proporcional' (legado)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testD1_Proporcional_NuncaGeraOverflow(tc)
             catalogo = [65, 645, 1290, 3226, 5161, 7742, 9677, ...
                         11613, 12903, 16129, 19355, 22581, 29032];
             cfg  = struct('tipo','D','opcoes',catalogo);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
 
             for x_int = 0:15
-                [v, viol] = rid_decodificar(tc.paraBits(x_int,4), mapa, cfg, 'proporcional');
+                [v, viol] = tc.aux.decodificar(tc.paraBits(x_int,4), mapa, cfg, 'proporcional');
                 tc.verifyEqual(viol, 0, ...
                     'Modo proporcional nao deveria gerar violacao estrutural.');
                 tc.verifyTrue(ismember(v, catalogo));
@@ -193,14 +200,14 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             % catalogo do benchmark Hadi (N=13, B=4, 16 estados).
             catalogo = 1:13;
             cfg  = struct('tipo','D','opcoes',catalogo);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
             N = 13;  B = 4;  n_estados = 2^B;
 
             % --- modo datta: conta codigos invalidos e mede uniformidade ---
             cont_datta = zeros(1, N);
             n_invalidos = 0;
             for x_int = 0:n_estados-1
-                [v, viol] = rid_decodificar(tc.paraBits(x_int,B), mapa, cfg, 'datta');
+                [v, viol] = tc.aux.decodificar(tc.paraBits(x_int,B), mapa, cfg, 'datta');
                 if viol > 0
                     n_invalidos = n_invalidos + 1;
                 else
@@ -211,7 +218,7 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             % --- modo proporcional: conta ocorrencias por opcao ---
             cont_prop = zeros(1, N);
             for x_int = 0:n_estados-1
-                v = rid_decodificar(tc.paraBits(x_int,B), mapa, cfg, 'proporcional');
+                v = tc.aux.decodificar(tc.paraBits(x_int,B), mapa, cfg, 'proporcional');
                 cont_prop(v) = cont_prop(v) + 1;
             end
 
@@ -241,50 +248,50 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             tc.verifyLessThan(p_valida_10, 0.13);
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % [D2] Variavel inteira — limites viram violacao, sem clamp
-        % =================================================================
+        % -----------------------------------------------------------------
         function testD2_RespeitaLimiteInferior(tc)
             % REGRESSAO: a versao anterior fazia min(x, max) e IGNORAVA
             % completamente var.min, deixando passar valores abaixo do limite.
             % [DF2011] Eq. (12): trem de engrenagens com 12 <= z <= 60.
             cfg  = struct('tipo','I','min',12,'max',60);
-            mapa = rid_mapear_dimensoes(cfg);          % ceil(log2(61)) = 6 bits
+            mapa = tc.aux.mapear_dimensoes(cfg);          % ceil(log2(61)) = 6 bits
             tc.verifyEqual(mapa(1).n_bits, 6);
 
             % x_int = 5 esta abaixo de min=12 -> violacao = 12 - 5 = 7
-            [v, viol] = rid_decodificar(tc.paraBits(5,6), mapa, cfg);
+            [v, viol] = tc.aux.decodificar(tc.paraBits(5,6), mapa, cfg);
             tc.verifyEqual(v, 5, 'Valor deve ser reportado sem clamp (Eq. 6).');
             tc.verifyEqual(viol, 7, 'Violacao do limite INFERIOR nao detectada (bug D2).');
         end
 
         function testD2_RespeitaLimiteSuperior(tc)
             cfg  = struct('tipo','I','min',12,'max',60);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
 
             % x_int = 63 excede max=60 -> violacao = 3
-            [v, viol] = rid_decodificar(tc.paraBits(63,6), mapa, cfg);
+            [v, viol] = tc.aux.decodificar(tc.paraBits(63,6), mapa, cfg);
             tc.verifyEqual(v, 63, 'Valor deve ser reportado sem clamp (Eq. 6).');
             tc.verifyEqual(viol, 3);
         end
 
         function testD2_DentroDosLimitesNaoViola(tc)
             cfg  = struct('tipo','I','min',12,'max',60);
-            mapa = rid_mapear_dimensoes(cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
             for x_int = 12:60
-                [v, viol] = rid_decodificar(tc.paraBits(x_int,6), mapa, cfg);
+                [v, viol] = tc.aux.decodificar(tc.paraBits(x_int,6), mapa, cfg);
                 tc.verifyEqual(v, x_int);
                 tc.verifyEqual(viol, 0);
             end
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % Variavel real e casos mistos
-        % =================================================================
+        % -----------------------------------------------------------------
         function testReal_ValorPassaDireto(tc)
             cfg  = struct('tipo','R','min',-3.5,'max',7.25);
-            mapa = rid_mapear_dimensoes(cfg);
-            [v, viol] = rid_decodificar(2.7182818, mapa, cfg);
+            mapa = tc.aux.mapear_dimensoes(cfg);
+            [v, viol] = tc.aux.decodificar(2.7182818, mapa, cfg);
             tc.verifyEqual(v, 2.7182818, 'AbsTol', 1e-12);
             tc.verifyEqual(viol, 0);
         end
@@ -293,24 +300,24 @@ classdef TestDecodificadorPSO < matlab.unittest.TestCase
             % Duas variaveis fora do dominio: as violacoes devem SOMAR.
             cfg(1) = struct('tipo','I','min',12,'max',60,'opcoes',[]);
             cfg(2) = struct('tipo','D','min',[],'max',[],'opcoes',1:13);
-            mapa = rid_mapear_dimensoes(cfg);          % 6 bits + 4 bits
+            mapa = tc.aux.mapear_dimensoes(cfg);          % 6 bits + 4 bits
 
             vetor = [tc.paraBits(63,6), tc.paraBits(15,4)];
             % inteira: 63 > 60      -> violacao 3
             % discreta: idx 16 > 13 -> violacao 3
-            [~, viol] = rid_decodificar(vetor, mapa, cfg, 'datta');
+            [~, viol] = tc.aux.decodificar(vetor, mapa, cfg, 'datta');
             tc.verifyEqual(viol, 6, 'Violacoes de variaveis distintas devem somar.');
         end
 
         function testRejeitaModoInvalido(tc)
             cfg  = struct('tipo','D','opcoes',1:4);
-            mapa = rid_mapear_dimensoes(cfg);
-            tc.verifyError(@() rid_decodificar([0 0], mapa, cfg, 'inexistente'), ...
-                'rid_decodificar:modoInvalido');
+            mapa = tc.aux.mapear_dimensoes(cfg);
+            tc.verifyError(@() tc.aux.decodificar([0 0], mapa, cfg, 'inexistente'), ...
+                'decodificar:modoInvalido');
         end
     end
 
-    % =====================================================================
+    % ---------------------------------------------------------------------
     methods (Access = private)
         function bits = paraBits(~, valor, n_bits)
             % Converte inteiro para vetor de bits, mais significativo a

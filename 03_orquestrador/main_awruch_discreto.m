@@ -3,12 +3,13 @@ function resultado = main_awruch_discreto(seed, n_runs)
 %
 % BLOCO 3 do projeto CPIO III — ORQUESTRADOR.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % PROPOSITO E LIMITACAO
-% =========================================================================
+% -------------------------------------------------------------------------
 % Este experimento NAO e um benchmark de validacao: o catalogo de Awruch nao
-% possui artigo-fonte (ver a nota de origem em problema_awruch_10barras.m) e
-% portanto NAO ha solucao publicada para comparar.
+% possui artigo-fonte (ver a nota de origem na funcao local
+% caso_awruch_10barras, no fim deste arquivo) e portanto NAO ha solucao
+% publicada para comparar.
 %
 % O que ele testa e a FLEXIBILIDADE do PSO-RID: cada barra escolhe de um
 % catalogo proprio, com CARDINALIDADES DIFERENTES entre si (4, 5 e 6 opcoes).
@@ -17,13 +18,29 @@ function resultado = main_awruch_discreto(seed, n_runs)
 % de Hadi — com catalogo unico compartilhado — nao percorre.
 %
 % Blocos acoplados:
-%   Bloco 1 (otimizador) : pso_rid.m
-%   Bloco 2a (solver)    : fem_nao_linear_solver.m
-%   Bloco 2b (problema)  : problema_awruch_10barras.m
+%   Bloco 1 (otimizador) : pso_rid.m                <- 01_pso_rid/
+%   Bloco 2  (solver)    : fem_nao_linear_solver.m  <- 02_fem_nao_linear/
+%
+% A definicao do problema esta EMBUTIDA aqui, na funcao local
+% caso_awruch_10barras. Ela herda geometria, material, apoios e cargas do
+% caso Hadi via main_hadi_nao_linear('caso') — fonte unica dessa geometria
+% no projeto — e troca apenas os catalogos de secoes.
+%
+% ACESSOR: caso = main_awruch_discreto('caso') devolve o struct do problema
+% sem rodar otimizacao (usado por 06_testes/TestIntegracao.m).
 %
 % USO
 %   main_awruch_discreto
 %   main_awruch_discreto(123, 10)
+
+% -------------------------------------------------------------------------
+% ACESSOR DO CASO (ver cabecalho)
+% -------------------------------------------------------------------------
+if nargin == 1 && ischar(seed) && strcmp(seed, 'caso')
+    garantir_caminhos();
+    resultado = caso_awruch_10barras();
+    return;
+end
 
 if nargin < 1 || isempty(seed),   seed   = 42; end
 if nargin < 2 || isempty(n_runs), n_runs = 5;  end
@@ -31,7 +48,7 @@ if nargin < 2 || isempty(n_runs), n_runs = 5;  end
 garantir_caminhos();
 rng(seed);
 
-caso = problema_awruch_10barras();
+caso = caso_awruch_10barras();
 
 funcao_objetivo = @(areas) avaliar_projeto(areas, caso);
 
@@ -43,7 +60,7 @@ pso_params.c1                     = 1.0;
 pso_params.c2                     = 2.0;
 pso_params.pm                     = 0.15;
 pso_params.auto_adaptativo        = true;
-pso_params.decodificacao_discreta = 'datta';
+pso_params.decodificacao_discreta = 'proporcional';  % ver [D1] em pso_rid.m
 pso_params.tol_estagnacao         = 200;
 pso_params.verbose                = true;
 pso_params.print_interval         = 100;
@@ -117,19 +134,106 @@ end
 % FUNCOES LOCAIS
 % #########################################################################
 
+
+% -------------------------------------------------------------------------
+% >>> LOCAL caso_awruch_10barras — DEFINICAO DO PROBLEMA
+%     Acesso externo: caso = main_awruch_discreto('caso')
+% -------------------------------------------------------------------------
+function caso = caso_awruch_10barras()
+% CASO_AWRUCH_10BARRAS  Trelica de 10 barras com catalogos independentes por barra.
+%
+% ARQUIVO DE PARAMETROS (sem logica de solver).
+%
+% -------------------------------------------------------------------------
+% ORIGEM E STATUS DE VALIDACAO
+% -------------------------------------------------------------------------
+% ATENCAO: este catalogo NAO possui artigo-fonte. Foi montado pelo professor
+% da disciplina apenas para EXERCITAR o solver com catalogos distintos por
+% barra (em vez de um catalogo unico compartilhado, como no benchmark de
+% Hadi & Alvani). Portanto:
+%
+%   - NAO ha solucao de referencia publicada para comparar.
+%   - NAO deve ser usado como evidencia de validacao do solver.
+%   - Serve como teste de FLEXIBILIDADE: confirma que o PSO-RID lida com
+%     variaveis discretas de catalogos e cardinalidades diferentes entre si.
+%
+% CORRECAO APLICADA (Bloco 2/3): a versao anterior deste caso
+% (05_legado/pre_bloco3/catalogo_awruch.m) declarava os campos
+%   ref_areas = [19355, 65, 16129, 7742, 65, 65, 5161, 16129, 12903, 65]
+%   ref_peso  = 2325.2
+% COPIADOS do benchmark de Hadi. Esses valores estavam ERRADOS neste
+% contexto: nenhuma daquelas areas pertence aos catalogos definidos abaixo
+% (verificado numericamente). Eram codigo morto e enganoso, e foram
+% removidos. O peso de referencia fica como NaN, sinalizando "sem referencia".
+%
+% -------------------------------------------------------------------------
+% GEOMETRIA E CARREGAMENTO
+% -------------------------------------------------------------------------
+% Identicos aos do benchmark de Hadi & Alvani (2003) — o que muda e apenas o
+% conjunto de secoes disponiveis para cada barra. A geometria e reutilizada
+% do caso Hadi, via acessor, para nao duplicar dados.
+%
+% SAIDA
+%   caso : struct pronto para os solvers do Bloco 2, com .config_vars
+%          definindo 10 variaveis discretas de catalogos independentes.
+
+% Reaproveita geometria, material, apoios, cargas e limites do benchmark.
+% main_hadi_nao_linear('caso') e a fonte unica dessa geometria no projeto.
+caso = main_hadi_nao_linear('caso');
+
+caso.nome = 'Catalogo Awruch - Trelica 10 Barras (catalogos por barra)';
+
+% -------------------------------------------------------------------------
+% CATALOGOS POR GRUPO DE BARRAS
+% -------------------------------------------------------------------------
+% Valores originais fornecidos em polegadas quadradas, convertidos para mm^2.
+POL2_PARA_MM2 = 645.16;   % 1 in^2 = 645.16 mm^2 (exato, por definicao da polegada)
+
+cat_A1 = [21.5, 22.5, 23.5, 24.5]             * POL2_PARA_MM2;
+cat_A2 = [0.1,  0.15, 0.2,  0.25]             * POL2_PARA_MM2;
+cat_A3 = [22.4, 25.4, 27.4, 29.4]             * POL2_PARA_MM2;
+cat_A4 = [14.1, 14.2, 14.3, 14.4, 14.5]       * POL2_PARA_MM2;
+cat_A6 = [0.5,  1.0,  1.5,  2.0,  2.5]        * POL2_PARA_MM2;
+cat_A7 = [11.0, 11.3, 11.7, 12.0, 12.3, 12.5] * POL2_PARA_MM2;
+
+caso.catalogos_por_barra = { ...
+    cat_A1, cat_A2, cat_A3, cat_A4, cat_A2, ...
+    cat_A6, cat_A7, cat_A3, cat_A4, cat_A2 };
+
+% Remove os campos herdados que NAO se aplicam a este caso
+caso = rmfield(caso, 'catalogo');    % nao ha catalogo unico compartilhado
+
+% -------------------------------------------------------------------------
+% SEM SOLUCAO DE REFERENCIA (ver nota de origem acima)
+% -------------------------------------------------------------------------
+caso.ref_areas = [];
+caso.ref_peso  = NaN;
+
+% -------------------------------------------------------------------------
+% VARIAVEIS DE PROJETO (para o PSO-RID do Bloco 1)
+% -------------------------------------------------------------------------
+caso.config_vars = struct('tipo', {}, 'opcoes', {});
+for i = 1:numel(caso.catalogos_por_barra)
+    caso.config_vars(i).tipo   = 'D';
+    caso.config_vars(i).opcoes = caso.catalogos_por_barra{i};
+end
+
+end
+
+
 function [custo, violacao] = avaliar_projeto(areas, caso)
 % [HA2003] Eq. (1) e (2); violacao separada do custo para uso com [DEB2000].
 [peso, Sigma, u_livre] = fem_nao_linear_solver(caso, areas);
 
 violacao = 0;
 
-excesso_sigma = abs(Sigma) - caso.sigma_max;
-excesso_sigma = excesso_sigma(excesso_sigma > 0);
-violacao = violacao + sum(excesso_sigma .^ 2);
+% [HA2003] Eq. (9) — restricoes normalizadas; ver a justificativa completa
+% em avaliar_projeto de main_hadi_nao_linear.m.
+g_sigma = abs(Sigma(:))   / caso.sigma_max - 1;
+g_desl  = abs(u_livre(:)) / caso.d_max     - 1;
 
-excesso_desl = abs(u_livre) - caso.d_max;
-excesso_desl = excesso_desl(excesso_desl > 0);
-violacao = violacao + sum(excesso_desl .^ 2);
+violacao = violacao + sum(max(0, g_sigma));
+violacao = violacao + sum(max(0, g_desl));
 
 custo = peso;
 end

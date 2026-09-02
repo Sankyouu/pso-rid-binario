@@ -3,17 +3,17 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
 %
 % BLOCO TESTADO: 2 (FEM nao linear), isoladamente — nenhum PSO envolvido.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % REFERENCIAS
-% =========================================================================
+% -------------------------------------------------------------------------
 %   [HA2003]  Hadi & Alvani (2003), Civil-Comp Press, Paper 37.
 %             Eq. (13) KT = KE + KG;  Eq. (14) matriz geometrica;
 %             Eq. (18) passo de Newton-Raphson;  Sec. 6.1 e Tabela 1.
 %   [CRI1991] Crisfield, Vol. 1 (1991) — formulacao de base citada por [HA2003].
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % ESTRATEGIA DE VALIDACAO (do mais forte para o mais fraco)
-% =========================================================================
+% -------------------------------------------------------------------------
 %   1. SOLUCAO ANALITICA EXATA — trelica rasa de 2 barras. Compara o
 %      deslocamento do apice com a formula fechada derivada para a MESMA
 %      medida de deformacao usada pelo solver. Independente de terceiros.
@@ -36,14 +36,19 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
             addpath(genpath(fullfile(raiz, '01_pso_rid')));
             addpath(fullfile(raiz, '05_legado'));
             addpath(genpath(fullfile(raiz, '02_fem_nao_linear')));
+            % O caso Hadi vem do acessor main_hadi_nao_linear('caso') e o
+            % oraculo analitico (problema_trelica_rasa_2barras) vive aqui
+            % em 06_testes, ao lado desta classe.
+            addpath(genpath(fullfile(raiz, '03_orquestrador')));
+            addpath(aqui);
         end
     end
 
     methods (Test)
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 1. VALIDACAO CONTRA SOLUCAO ANALITICA EXATA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testAnalitico_DeslocamentoDoApiceBateComFormulaFechada(tc)
             % Trelica rasa de 2 barras: o deslocamento do apice calculado
             % pelo Newton-Raphson deve coincidir com a solucao fechada
@@ -127,13 +132,13 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
                 'problema_trelica_rasa_2barras:cargaAcimaDaCritica');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 2. EQUILIBRIO GLOBAL
-        % =================================================================
+        % -----------------------------------------------------------------
         function testEquilibrioGlobal_ResiduoDesprezivel(tc)
             % Ao fim da analise, as forcas internas devem equilibrar as
             % externas nos GDLs livres.
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             [~,~,~,d] = fem_nao_linear_solver(caso, areas, ...
@@ -151,7 +156,7 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
         function testReacoesEquilibramCargaAplicada(tc)
             % A soma das reacoes nos apoios deve equilibrar a resultante
             % externa (equilibrio global de corpo livre).
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             [~,~,~,d] = fem_nao_linear_solver(caso, caso.ref_areas, ...
                             struct('n_inc', 10, 'tol', 1e-10));
 
@@ -166,9 +171,9 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
                 'Reacoes verticais nao equilibram a carga aplicada.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 3. LIMITE LINEAR
-        % =================================================================
+        % -----------------------------------------------------------------
         function testCargaPequena_ConvergeParaSolucaoLinear(tc)
             % [HA2003] Sec. 4: com deslocamentos despreziveis, KG -> 0 e a
             % analise nao linear degenera na linear.
@@ -182,7 +187,7 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
             % a diferenca residual passa a ser dominada pela tolerancia de
             % convergencia do Newton-Raphson, e nao pela fisica. Testar a
             % TENDENCIA e mais significativo e mais robusto.)
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             fatores    = [1e-1, 1e-2, 1e-3];
@@ -227,14 +232,14 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
                     discrep_u(1), discrep_u(2), discrep_u(3));
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 4. INVARIANCIA NUMERICA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testResultadoIndependeDoNumeroDeIncrementos(tc)
             % Um Newton-Raphson corretamente implementado converge para o
             % MESMO equilibrio independentemente de quantos incrementos de
             % carga sao usados (o incremento afeta a robustez, nao a solucao).
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             [~, S_ref, u_ref] = fem_nao_linear_solver(caso, areas, ...
@@ -254,21 +259,21 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
             % O solver deve informar se convergiu. Com tolerancia
             % inatingivel em 1 iteracao, deve reportar convergiu = false
             % em vez de devolver um resultado silenciosamente nao convergido.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             [~,~,~,d] = fem_nao_linear_solver(caso, caso.ref_areas, ...
                             struct('n_inc', 1, 'max_iter', 1, 'tol', 1e-14));
             tc.verifyFalse(d.convergiu, ...
                 'Solver deveria reportar nao convergencia com max_iter = 1.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 5. CARACTERIZACAO DO BENCHMARK DE HADI
-        % =================================================================
+        % -----------------------------------------------------------------
         function testHadi_CaracterizacaoDaSolucaoDeReferencia(tc)
             % TESTE DE CARACTERIZACAO — trava os valores atualmente obtidos
             % e DOCUMENTA as discrepancias conhecidas em relacao a [HA2003].
             % NAO e um teste de igualdade estrita com o artigo.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             [w, S, u] = fem_nao_linear_solver(caso, caso.ref_areas);
 
             max_u = max(abs(u));
@@ -292,14 +297,129 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
             % DISCREPANCIA DOCUMENTADA: o deslocamento excede levemente o
             % limite (51.02 mm > 50.80 mm). Estavel a variacoes de n_inc e
             % da magnitude exata da carga — nao e erro de convergencia.
+            % Ver testHadi_UnidadesImperiaisExplicamOPeso abaixo.
             tc.verifyLessThan(max_u, 1.01 * caso.d_max, ...
                 'Deslocamento excedeu o limite em mais de 1% (discrepancia mudou).');
+        end
+
+        function testHadi_UnidadesImperiaisExplicamOPeso(tc)
+            % EXPLICACAO DA DISCREPANCIA DE PESO (investigacao de 2026-08-31).
+            %
+            % [HA2003] enuncia o problema em SI, mas os valores sao conversoes
+            % de numeros redondos imperiais. A Tabela 1 foi calculada com
+            % rho = 0.1 lb/in^3 EXATO (= 2767.990 kg/m^3), e nao com o
+            % 2770 kg/m^3 declarado no texto.
+            %
+            % Este teste trava a explicacao: trocando SO a densidade pelo
+            % valor imperial exato, o peso publicado e reproduzido.
+            caso = main_hadi_nao_linear('caso');
+
+            w_texto = fem_nao_linear_solver(caso, caso.ref_areas);
+
+            c = caso;  c.dens = caso.dens_exata;
+            w_exato = fem_nao_linear_solver(c, caso.ref_areas);
+
+            fprintf(['\n[UNIDADES IMPERIAIS] peso da solucao de referencia\n' ...
+                     '  dens = 2770.000 (texto do artigo) : %9.4f kg (%+.4f%%)\n' ...
+                     '  dens = %7.3f (0.1 lb/in^3)      : %9.4f kg (%+.4f%%)\n'], ...
+                    w_texto, 100*(w_texto-caso.ref_peso)/caso.ref_peso, ...
+                    caso.dens_exata*1e9, ...
+                    w_exato, 100*(w_exato-caso.ref_peso)/caso.ref_peso);
+
+            % A densidade exata reproduz o publicado dentro do arredondamento
+            % de impressao do proprio artigo (1 casa decimal em 2325.2).
+            tc.verifyEqual(w_exato, caso.ref_peso, 'AbsTol', 0.1, ...
+                'Densidade imperial exata deveria reproduzir a Tabela 1.');
+
+            % E melhora em mais de uma ordem de grandeza sobre o valor do texto.
+            err_texto = abs(w_texto - caso.ref_peso);
+            err_exato = abs(w_exato - caso.ref_peso);
+            tc.verifyLessThan(err_exato, err_texto/10, ...
+                'A explicacao imperial deveria reduzir o erro em 10x ou mais.');
+        end
+
+        function testHadi_TodasAsSolucoesPublicadasReproduzemOPeso(tc)
+            % A explicacao imperial nao pode valer so para uma linha da
+            % Tabela 1. Este teste a aplica a TODAS as colunas do artigo que
+            % listam areas — inclusive as de Gutkowski-Zawidzka [4], obtidas
+            % por outro metodo. Se o peso de todas bate, a formula do peso e
+            % o conjunto de comprimentos estao certos.
+            caso = main_hadi_nao_linear('caso');
+            c = caso;  c.dens = caso.dens_exata;
+
+            % [HA2003] Tabela 1 — {rotulo, areas [mm^2], peso publicado [kg]}
+            T = { ...
+              'C1 G-Z Enumeration  ', [23226 323 17419 12258 323 1290 4516 12258 12258 65], 2429.5; ...
+              'C1 Hadi discreto    ', [17419 65 17419 12258 65 65 4516 12258 17419 65],     2423.2; ...
+              'C2 G-Z Sequential   ', [19355 65 19355 9677 65 65 5161 12903 12903 65],      2340.4; ...
+              'C2 G-Z Enumeration  ', [19355 65 16129 7742 65 645 5161 12903 16129 65],     2339.9; ...
+              'C2 Hadi discreto    ', caso.ref_areas,                                       2325.2 };
+
+            fprintf('\n[TABELA 1 COMPLETA] peso com densidade imperial exata\n');
+            for k = 1:size(T,1)
+                w = fem_nao_linear_solver(c, T{k,2});
+                fprintf('  %s: %9.2f kg (publicado %7.1f, %+.4f%%)\n', ...
+                        T{k,1}, w, T{k,3}, 100*(w-T{k,3})/T{k,3});
+                tc.verifyEqual(w, T{k,3}, 'RelTol', 1e-4, ...
+                    sprintf('Peso de "%s" nao reproduz a Tabela 1.', strtrim(T{k,1})));
+            end
+        end
+
+        function testHadi_NumeracaoDasDiagonaisEhAMelhorPossivel(tc)
+            % As barras 7..10 sao as diagonais e tem TODAS o mesmo
+            % comprimento (L*sqrt(2)). Logo permutar areas entre elas NAO
+            % altera o peso — so o deslocamento. Isso levantou a hipotese de
+            % que a numeracao das diagonais em [HA2003] Fig. 1 fosse outra, o
+            % que explicaria o deslocamento acima do limite.
+            %
+            % HIPOTESE REFUTADA, e este teste trava a refutacao: a ordem
+            % adotada aqui produz o MENOR deslocamento entre as 24
+            % permutacoes possiveis. Qualquer outra numeracao seria pior, e
+            % nenhuma torna a solucao de referencia viavel.
+            caso = main_hadi_nao_linear('caso');
+            c = caso;  c.E = caso.E_exato;  c.dens = caso.dens_exata;
+            ref = caso.ref_areas;
+
+            % Confirma a premissa: as quatro diagonais tem comprimento igual
+            L = zeros(1,10);
+            for e = 1:10
+                n1 = caso.elements(1,e);  n2 = caso.elements(2,e);
+                L(e) = norm(caso.nodes0(:,n2) - caso.nodes0(:,n1));
+            end
+            tc.verifyEqual(L(8:10), L(7)*ones(1,3), 'RelTol', 1e-12, ...
+                'As barras 7..10 deveriam ter comprimento igual.');
+
+            [~,~,u_ref] = fem_nao_linear_solver(c, ref);
+            d_ref = max(abs(u_ref));
+
+            P = perms(7:10);
+            d_min_alt = inf;
+            for k = 1:size(P,1)
+                a = ref;  a(7:10) = ref(P(k,:));
+                if isequal(a, ref), continue; end
+                [w_p,~,u_p] = fem_nao_linear_solver(c, a);
+                % O peso e invariante a permutacao das diagonais
+                tc.verifyEqual(w_p, fem_nao_linear_solver(c, ref), 'RelTol', 1e-12);
+                d_min_alt = min(d_min_alt, max(abs(u_p)));
+            end
+
+            fprintf(['\n[NUMERACAO DAS DIAGONAIS] max|u| da solucao de referencia\n' ...
+                     '  ordem adotada        : %8.3f mm\n' ...
+                     '  melhor alternativa   : %8.3f mm\n' ...
+                     '  limite [HA2003]      : %8.3f mm\n'], ...
+                    d_ref, d_min_alt, caso.d_max);
+
+            tc.verifyLessThan(d_ref, d_min_alt, ...
+                ['A numeracao adotada deixou de ser a melhor das 24 ' ...
+                 'permutacoes das diagonais — a topologia mudou.']);
+            tc.verifyGreaterThan(d_min_alt, caso.d_max, ...
+                'Alguma permutacao tornou a referencia viavel — reabrir a hipotese.');
         end
 
         function testPesoNaoDependeDoCarregamento(tc)
             % O peso e propriedade do projeto (area x comprimento inicial x
             % densidade) e nao pode variar com a carga aplicada.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             w1 = fem_nao_linear_solver(caso, caso.ref_areas);
 
@@ -313,7 +433,7 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
 
         function testPesoConfereComCalculoManual(tc)
             % Verificacao independente: soma de A_i * L0_i * densidade.
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             n_el = size(caso.elements, 2);
@@ -329,37 +449,37 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
             tc.verifyEqual(w_solver, w_manual, 'RelTol', 1e-12);
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 6. VALIDACAO DE ENTRADA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testRejeitaVetorDeAreasComTamanhoErrado(tc)
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             tc.verifyError(@() fem_nao_linear_solver(caso, ones(1,9)), ...
                 'fem_nao_linear_solver:areasIncompativeis');
         end
 
         function testRejeitaAreaNaoPositiva(tc)
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;  areas(3) = 0;
             tc.verifyError(@() fem_nao_linear_solver(caso, areas), ...
                 'fem_nao_linear_solver:areaNaoPositiva');
         end
 
         function testRejeitaProblemaIncompleto(tc)
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             caso = rmfield(caso, 'E');
             tc.verifyError(@() fem_nao_linear_solver(caso, ones(1,10)), ...
                 'fem_nao_linear_solver:campoAusente');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 7. EQUIVALENCIA COM O SOLVER ORIGINAL (arquivado em 05_legado)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testSolverOriginalProduzResultadoIdentico(tc)
             % O solver ORIGINAL (pre-Bloco 2), arquivado em 05_legado/,
             % deve devolver exatamente o mesmo que o solver generico,
             % garantindo que a migracao nao alterou nenhum resultado.
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             [w1, S1, u1] = fem_truss_nonlinear_pre_bloco2(areas);
@@ -371,7 +491,7 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
         end
     end
 
-    % =====================================================================
+    % ---------------------------------------------------------------------
     methods (Access = private)
         function F_int = montarForcasInternas(~, caso, d)
             % Reconstroi o vetor de forcas internas a partir das forcas

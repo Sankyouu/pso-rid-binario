@@ -1,34 +1,43 @@
 function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_analise)
 % MAIN_ESTUDO_ESTATISTICO  Comparacao multi-semente de configuracoes do PSO-RID.
 %
-% BLOCO 3 do projeto CPIO III — ORQUESTRADOR DE ESTUDO COMPARATIVO.
-%
-% =========================================================================
+% -------------------------------------------------------------------------
 % MOTIVACAO
-% =========================================================================
-% Durante a validacao do Bloco 1 surgiram duas questoes em aberto que NAO
-% podem ser respondidas com execucoes unicas, por causa da variancia
-% inerente a um algoritmo estocastico:
+% -------------------------------------------------------------------------
+
+% Este orquestrador compara configuracoes do PSO-RID sobre o MESMO conjunto
+% de sementes (amostras pareadas), reportando media, desvio padrao,
+% melhor/pior e taxa de viabilidade. Foi criado para responder duas questoes
+% que execucoes unicas nao resolviam, dada a variancia do algoritmo.
 %
+% -------------------------------------------------------------------------
+% QUESTOES JA RESPONDIDAS POR ESTE ESTUDO
+% -------------------------------------------------------------------------
+
 %   Q1. A decodificacao discreta literal de [DF2011] ('datta') e melhor ou
-%       pior que a heuristica proporcional legada?
-%       Observacao preliminar (1 execucao cada, orcamento igualado em
-%       avaliacoes FEM): 2467.21 kg vs 2483.10 kg — diferenca de 0.6%,
-%       dentro do ruido. INCONCLUSIVO.
+%       pior que a heuristica 'proporcional'?
+%       RESPONDIDA (30 sementes pareadas, FEM linear, 2026-08-31):
+%         'datta'        melhor 2357.97 | media 2572.64 | desvio 173.05
+%         'proporcional' melhor 2342.11 | media 2504.72 | desvio  97.40
+%       Variancia: F = 3.16 (critico 2.10) -> 'proporcional'
+%       SIGNIFICATIVAMENTE mais consistente. Media: t = -1.836 (sem
+%       evidencia), mas teste do sinal 21/30 (p = 0.043, significativo).
+%       DECISAO: 'proporcional' virou o padrao — ver [D1] em pso_rid.m.
 %
 %   Q2. A auto-adaptacao instantanea dos hiperparametros ([DF2011] Sec. 5)
-%       prejudica a convergencia frente aos valores fixos usados na versao
-%       anterior do solver (w 0.9->0.4 linear, c1 = c2 = 2.0)?
-%       Observacao preliminar (1 execucao cada): a versao legada obteve
-%       2356.80 kg contra 2536.56 kg. INCONCLUSIVO.
+%       prejudica a convergencia frente a valores fixos?
+%       RESPONDIDA (10 sementes pareadas): +31.30 kg, t = 0.631, 4/10
+%       vitorias. SEM evidencia. A suspeita original vinha de uma unica
+%       execucao (legado 2356.80 vs nova 2536.56) e era artefato de
+%       amostra de tamanho 1. HIPOTESE REFUTADA.
 %
-% Este orquestrador responde ambas comparando configuracoes sobre o MESMO
-% conjunto de sementes (amostras pareadas), reportando media, desvio padrao,
-% melhor/pior e taxa de viabilidade.
+% As configuracoes padrao abaixo foram reorientadas para VIGIAR essas
+% decisoes, nao mais para descobri-las.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % METODOLOGIA
-% =========================================================================
+% -------------------------------------------------------------------------
+%
 % - Cada configuracao e executada uma vez por semente.
 % - Todas as configuracoes veem EXATAMENTE as mesmas sementes (pareamento),
 %   o que reduz a variancia da comparacao.
@@ -43,20 +52,23 @@ function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_ana
 % Com os padroes abaixo (4 configuracoes x 10 sementes) o estudo leva horas.
 % Use n_sementes menor para um ensaio rapido.
 %
-% =========================================================================
+% -------------------------------------------------------------------------
 % USO
-% =========================================================================
+% -------------------------------------------------------------------------
+%
 %   main_estudo_estatistico                  % 10 sementes, 4 configuracoes
 %   main_estudo_estatistico(3)               % ensaio rapido
 %   main_estudo_estatistico(10, [], 'linear')% FEM linear (muito mais rapido)
 %   r = main_estudo_estatistico(5);
 %
 % ENTRADAS
+%
 %   n_sementes    : quantas execucoes por configuracao      (padrao 10)
 %   configuracoes : struct array com .nome e .params        (padrao: as 4 abaixo)
 %   tipo_analise  : 'nao_linear' (padrao) ou 'linear'
 %
 % SAIDA
+%
 %   resultado : struct array com as estatisticas de cada configuracao
 
 if nargin < 1 || isempty(n_sementes),   n_sementes   = 10;           end
@@ -64,18 +76,29 @@ if nargin < 3 || isempty(tipo_analise), tipo_analise = 'nao_linear'; end
 
 garantir_caminhos();
 
-caso = problema_hadi_10barras();
+% Caso Hadi — fonte unica: funcao local de main_hadi_nao_linear.m,
+% exposta pelo acessor (ver cabecalho daquele arquivo).
 
-% =========================================================================
+caso = main_hadi_nao_linear('caso');
+
+% -------------------------------------------------------------------------
 % CONFIGURACOES COMPARADAS
 % -------------------------------------------------------------------------
 % Desenhadas para isolar UMA variavel por vez em relacao a configuracao
 % base (fiel a [DF2011]):
-%   A: base fiel ao artigo
-%   B: A, trocando apenas a decodificacao discreta      -> responde Q1
-%   C: A, trocando apenas a auto-adaptacao por valores fixos -> responde Q2
-%   D: C + decodificacao proporcional (equivale ao comportamento legado)
-% =========================================================================
+%   A: PADRAO ATUAL do solver ('proporcional' + auto-adaptativo)
+%   B: A, trocando so a decodificacao para 'datta'  -> reexamina [D1]
+%   C: A, trocando so a auto-adaptacao por fixos    -> reexamina Q2
+%
+% NOTA DE HISTORICO (2026-08-31): ate esta data a base era 'datta', e o
+% estudo existia para responder Q1 (decodificacao) e Q2 (auto-adaptacao).
+% Ambas foram respondidas — ver o relatorio em 00_docs/notas_e_relatorios/ e
+% o bloco [D1] em pso_rid.m. A base passou a ser 'proporcional', e as
+% configuracoes abaixo foram reorientadas para VIGIAR essas decisoes: se
+% alguma delas deixar de se sustentar num novo desenho experimental, aparece
+% aqui.
+% -------------------------------------------------------------------------
+
 if nargin < 2 || isempty(configuracoes)
     base                           = struct();
     base.n_particulas              = 100;
@@ -84,14 +107,14 @@ if nargin < 2 || isempty(configuracoes)
     base.c2                        = 2.0;
     base.pm                        = 0.15;
     base.auto_adaptativo           = true;
-    base.decodificacao_discreta    = 'datta';
+    base.decodificacao_discreta    = 'proporcional';   % [D1]
     base.tol_estagnacao            = 200;
     base.verbose                   = false;
 
     cfgA = base;
 
     cfgB = base;
-    cfgB.decodificacao_discreta    = 'proporcional';
+    cfgB.decodificacao_discreta    = 'datta';
 
     cfgC = base;
     cfgC.auto_adaptativo           = false;
@@ -99,15 +122,11 @@ if nargin < 2 || isempty(configuracoes)
     cfgC.c1                        = 2.0;
     cfgC.c2                        = 2.0;
 
-    cfgD = cfgC;
-    cfgD.decodificacao_discreta    = 'proporcional';
-
     configuracoes = struct( ...
-        'nome',   {'A: Datta puro', ...
-                   'B: A + decod. proporcional', ...
-                   'C: A + hiperparam. fixos', ...
-                   'D: fixos + proporcional (legado)'}, ...
-        'params', {cfgA, cfgB, cfgC, cfgD});
+        'nome',   {'A: padrao atual (proporcional)', ...
+                   'B: A + decod. datta', ...
+                   'C: A + hiperparam. fixos'}, ...
+        'params', {cfgA, cfgB, cfgC});
 end
 
 % Orcamento em avaliacoes FEM (igual para todas as configuracoes)
@@ -117,9 +136,10 @@ sementes = 1:n_sementes;
 
 imprimir_cabecalho(caso, configuracoes, sementes, orcamento_avaliacoes, tipo_analise);
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % EXECUCAO
-% =========================================================================
+% -------------------------------------------------------------------------
+
 n_cfg     = numel(configuracoes);
 pesos     = nan(n_cfg, n_sementes);
 viaveis   = false(n_cfg, n_sementes);
@@ -168,9 +188,10 @@ for c = 1:n_cfg
     end
 end
 
-% =========================================================================
+% -------------------------------------------------------------------------
 % ESTATISTICAS E RELATORIO
-% =========================================================================
+% -------------------------------------------------------------------------
+
 resultado = struct([]);
 for c = 1:n_cfg
     p_viaveis = pesos(c, viaveis(c,:));
@@ -206,6 +227,7 @@ end
 % #########################################################################
 
 function [fobj, ler_melhor] = criar_funcao_com_orcamento(caso, tipo_analise, limite)
+
 % Cria uma funcao objetivo com ORCAMENTO DE AVALIACOES do FEM, para que
 % configuracoes com taxas de descarte estrutural diferentes sejam comparadas
 % de forma justa (ver METODOLOGIA no topo do arquivo).
@@ -224,8 +246,16 @@ function [fobj, ler_melhor] = criar_funcao_com_orcamento(caso, tipo_analise, lim
 %
 % Como o erro interrompe o pso_rid antes do seu retorno normal, esta closure
 % mantem por conta propria o MELHOR RESULTADO ja visto, aplicando a mesma
-% regra de dominancia de Deb usada internamente pelo solver (rid_domina_deb).
+% regra de dominancia de Deb usada internamente pelo solver (domina_deb).
 % Assim nada se perde ao abortar.
+
+% domina_deb e funcao LOCAL de pso_rid.m; o handle vem pelo acessor
+% documentado no cabecalho daquele arquivo. Usar exatamente a mesma
+% implementacao (e nao uma copia) e o que garante que o "melhor" registrado
+% aqui coincida com o criterio interno do otimizador.
+
+aux_pso     = pso_rid('auxiliares');
+domina_deb  = aux_pso.domina_deb;
 
 n_chamadas    = 0;
 melhor_areas  = [];
@@ -242,7 +272,7 @@ melhor_viol   = inf;
         [custo, violacao] = avaliar_projeto(areas, caso, tipo_analise);
 
         % Registra o melhor pela regra de [DEB2000] (mesma do solver)
-        if rid_domina_deb(custo, violacao, melhor_custo, melhor_viol)
+        if domina_deb(custo, violacao, melhor_custo, melhor_viol)
             melhor_custo = custo;
             melhor_viol  = violacao;
             melhor_areas = areas;
@@ -274,13 +304,13 @@ end
 
 violacao = 0;
 
-excesso_sigma = abs(Sigma) - caso.sigma_max;
-excesso_sigma = excesso_sigma(excesso_sigma > 0);
-violacao = violacao + sum(excesso_sigma .^ 2);
+% [HA2003] Eq. (9) — restricoes normalizadas; ver a justificativa completa
+% em avaliar_projeto de main_hadi_nao_linear.m.
+g_sigma = abs(Sigma(:))   / caso.sigma_max - 1;
+g_desl  = abs(u_livre(:)) / caso.d_max     - 1;
 
-excesso_desl = abs(u_livre) - caso.d_max;
-excesso_desl = excesso_desl(excesso_desl > 0);
-violacao = violacao + sum(excesso_desl .^ 2);
+violacao = violacao + sum(max(0, g_sigma));
+violacao = violacao + sum(max(0, g_desl));
 
 custo = peso;
 end
@@ -328,6 +358,7 @@ end
 
 
 function imprimir_conclusoes(res)
+
 % Comparacoes PAREADAS que respondem Q1 e Q2 da documentacao no topo.
 %
 % METODOLOGIA — por que analisar as DIFERENCAS, e nao as medias:
@@ -346,16 +377,12 @@ function imprimir_conclusoes(res)
 fprintf('\n LEITURA DAS COMPARACOES PAREADAS\n');
 fprintf('----------------------------------------------------------------\n');
 
-if numel(res) >= 2
-    comparar_pareado(res(2), res(1), 'Q1 — decodificacao discreta');
-end
-
-if numel(res) >= 3
-    comparar_pareado(res(3), res(1), 'Q2 — hiperparametros fixos vs auto-adaptativos');
-end
-
-if numel(res) >= 4
-    comparar_pareado(res(4), res(1), 'Extra — configuracao legada vs Datta puro');
+% Os rotulos supoem as configuracoes PADRAO. Com configuracoes proprias,
+% cada bloco compara res(k) contra res(1) — leia pelos nomes impressos.
+rotulos = {'[D1] decodificacao: datta vs padrao proporcional', ...
+           'Q2 — hiperparametros fixos vs auto-adaptativos'};
+for k = 2:min(numel(res), 3)
+    comparar_pareado(res(k), res(1), rotulos{k-1});
 end
 
 fprintf('----------------------------------------------------------------\n');

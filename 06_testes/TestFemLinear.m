@@ -16,14 +16,19 @@ classdef TestFemLinear < matlab.unittest.TestCase
             addpath(genpath(fullfile(raiz, '01_pso_rid')));
             addpath(fullfile(raiz, '05_legado'));
             addpath(genpath(fullfile(raiz, '02_fem_nao_linear')));
+            % O caso Hadi vem do acessor main_hadi_nao_linear('caso') e o
+            % oraculo analitico (problema_trelica_rasa_2barras) vive aqui
+            % em 06_testes, ao lado desta classe.
+            addpath(genpath(fullfile(raiz, '03_orquestrador')));
+            addpath(aqui);
         end
     end
 
     methods (Test)
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 1. SOLUCAO FECHADA: BARRA UNICA SOB TRACAO PURA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testBarraUnica_DeslocamentoEhPLsobreEA(tc)
             % Caso mais elementar da resistencia dos materiais:
             %       delta = P*L / (E*A)      e      sigma = P/A
@@ -82,9 +87,9 @@ classdef TestFemLinear < matlab.unittest.TestCase
             tc.verifyEqual(w, A*L*dens, 'RelTol', 1e-12);
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 2. SIMETRIA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testTrelicaSimetrica_ProduzRespostaSimetrica(tc)
             % Trelica de 2 barras simetrica com carga vertical no apice:
             % as duas barras devem ter tensoes IDENTICAS e o apice nao pode
@@ -115,12 +120,12 @@ classdef TestFemLinear < matlab.unittest.TestCase
             tc.verifyLessThan(Sigma(2), 0, 'Barra 2 deveria estar comprimida.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 3. EQUILIBRIO E LINEARIDADE
-        % =================================================================
+        % -----------------------------------------------------------------
         function testEquilibrio_KuIgualF(tc)
             % Nos GDLs livres, K*u deve reproduzir o vetor de forcas.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             [~,~,~,d] = fem_linear_solver(caso, caso.ref_areas);
 
             residuo = d.K * d.u - caso.F_total;
@@ -132,7 +137,7 @@ classdef TestFemLinear < matlab.unittest.TestCase
 
         function testLinearidade_DobrarCargaDobraResposta(tc)
             % Propriedade definidora da analise linear.
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
 
             [~, S1, u1] = fem_linear_solver(caso, caso.ref_areas);
 
@@ -147,40 +152,40 @@ classdef TestFemLinear < matlab.unittest.TestCase
         end
 
         function testMatrizDeRigidezEhSimetrica(tc)
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             [~,~,~,d] = fem_linear_solver(caso, caso.ref_areas);
             tc.verifyEqual(d.K, d.K', 'AbsTol', 1e-6, ...
                 'A matriz de rigidez deve ser simetrica.');
         end
 
         function testApoiosNaoSeDeslocam(tc)
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             [~,~,~,d] = fem_linear_solver(caso, caso.ref_areas);
             tc.verifyEqual(d.u(caso.apoios), zeros(numel(caso.apoios),1), ...
                 'AbsTol', 1e-12, 'GDLs restringidos devem ter deslocamento nulo.');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 4. VALIDACAO DE ENTRADA
-        % =================================================================
+        % -----------------------------------------------------------------
         function testRejeitaAreasComTamanhoErrado(tc)
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             tc.verifyError(@() fem_linear_solver(caso, ones(1,3)), ...
                 'fem_linear_solver:areasIncompativeis');
         end
 
         function testRejeitaProblemaIncompleto(tc)
-            caso = problema_hadi_10barras();
+            caso = main_hadi_nao_linear('caso');
             caso = rmfield(caso, 'dens');
             tc.verifyError(@() fem_linear_solver(caso, ones(1,10)), ...
                 'fem_linear_solver:campoAusente');
         end
 
-        % =================================================================
+        % -----------------------------------------------------------------
         % 5. EQUIVALENCIA COM O SOLVER ORIGINAL (arquivado em 05_legado)
-        % =================================================================
+        % -----------------------------------------------------------------
         function testSolverOriginalProduzResultadoIdentico(tc)
-            caso  = problema_hadi_10barras();
+            caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
             [w1, S1, u1] = fem_truss_linear_pre_bloco2(areas);

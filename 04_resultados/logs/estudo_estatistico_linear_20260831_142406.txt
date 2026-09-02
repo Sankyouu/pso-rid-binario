@@ -1,0 +1,16 @@
+ESTUDO ESTATISTICO PSO-RID
+Data: 31-Aug-2026 14:24:06
+Analise: linear | Sementes: [1 2 3 4 5 6 7 8 9 10] | Orcamento: 15000 avaliacoes
+
+A: datta + violacao (atual)
+  melhor=2374.81 media=2551.24 desvio=173.54 viabilidade=100%
+  pesos por semente: [2596.3 2585.13 2888.29 2476.36 2377.61 2411.46 2747.3 2646.48 2408.65 2374.81]
+
+B: datta + dominante [D7]
+  melhor=2342.11 media=2573.44 desvio=199.84 viabilidade=100%
+  pesos por semente: [2549.63 2864.51 2947.39 2678.02 2375.95 2505.5 2342.11 2551.29 2459.99 2459.99]
+
+C: proporcional
+  melhor=2342.11 media=2467.37 desvio=88.78 viabilidade=100%
+  pesos por semente: [2489.18 2577.16 2359.63 2356.8 2342.11 2524.21 2448.58 2540.54 2468.41 2567.1]
+
