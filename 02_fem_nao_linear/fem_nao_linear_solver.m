@@ -1,4 +1,9 @@
 function [weight, Sigma, u_livre, diag_out] = fem_nao_linear_solver(problema, areas, opcoes)
+arguments
+    problema (1,1) struct
+    areas    (1,:) double
+    opcoes   (1,1) struct = struct()
+end
 % FEM_NAO_LINEAR_SOLVER  Analise geometricamente nao linear de trelicas planas.
 %
 % Este arquivo nao conhece nenhum problema especifico: toda a geometria,
@@ -75,6 +80,8 @@ function [weight, Sigma, u_livre, diag_out] = fem_nao_linear_solver(problema, ar
 %       .convergiu      true se TODOS os incrementos convergiram
 %       .iters_por_inc  iteracoes N-R gastas em cada incremento
 %       .residuo_final  norma relativa do residuo ao fim do ultimo incremento
+%
+% See also fem_linear_solver
 
 % -------------------------------------------------------------------------
 % 0. VALIDACAO DE ENTRADA
@@ -114,8 +121,11 @@ assert(all(apoios >= 1 & apoios <= s_dof), 'fem_nao_linear_solver:apoioInvalido'
 
 F_total = problema.F_total(:);
 
-% Parametros de controle do Newton-Raphson
-if nargin < 3 || isempty(opcoes), opcoes = struct(); end
+% Parametros de controle do Newton-Raphson. O default de "opcoes" (struct
+% vazio) ja vem do bloco "arguments"; get_opcao le cada campo com seu proprio
+% default, porque um struct generico nao tem seus subcampos declaraveis em
+% "arguments" sem trocar a convencao de chamada (opcoes so aceita struct
+% pronto posicional, nao pares Nome-Valor — ver nota em fem_linear_solver.m).
 n_inc    = get_opcao(opcoes, 'n_inc',      10);
 max_iter = get_opcao(opcoes, 'max_iter',   50);
 tol      = get_opcao(opcoes, 'tol',      1e-6);

@@ -1,4 +1,12 @@
-function resultado = main_hadi_20barras(seed, n_runs, modo)
+function resultado = main_hadi_20barras(seed, n_runs, modo, n_workers)
+arguments
+    % seed aceita tambem char/string por causa das chamadas-sentinela
+    % main_hadi_20barras('caso') / ('auxiliares') — ver mais abaixo.
+    seed {mustBeA(seed, ["double","char","string"])} = 42
+    n_runs    (1,1) double {mustBePositive, mustBeInteger} = 5
+    modo      {mustBeMember(modo, {'linear', 'nao_linear'})} = 'nao_linear'
+    n_workers (1,1) double {mustBeNonnegative, mustBeInteger} = 0
+end
 % MAIN_HADI_20BARRAS  Otimizacao da trelica plana de 20 barras de [HA2003] Sec. 2.2.
 %
 % -------------------------------------------------------------------------
@@ -54,13 +62,22 @@ function resultado = main_hadi_20barras(seed, n_runs, modo)
 %   main_hadi_20barras(123)                 % outra semente
 %   main_hadi_20barras(42, 10)              % 10 execucoes
 %   main_hadi_20barras(42, 5, 'linear')     % analise linear (Case 2)
+%   main_hadi_20barras(42, 5, 'nao_linear', 3)  % ate 3 workers em paralelo
 %   caso = main_hadi_20barras('caso');      % so o struct do problema
 %   r = main_hadi_20barras;                 % devolve struct com resultados
+%
+% n_workers (padrao 0 = serial) paraleliza o laco multi-start via parfor.
+% Efeito colateral aceito: cada run passa a ter semente PROPRIA em vez de
+% todas consumirem o mesmo stream em sequencia — ver a nota completa em
+% main_hadi_nao_linear.m. preparar_pool.m aplica um teto por memoria
+% disponivel, nao por nucleos.
 %
 % SAIDA
 %   resultado : struct com .melhor_areas (10 grupos) .melhor_areas_barras (20)
 %               .melhor_peso .violacao .Sigma .u .historicos .pesos_por_run
 %               .caso .modo
+%
+% See also pso_rid, fem_nao_linear_solver, fem_linear_solver, main_hadi_51barras
 
 % -------------------------------------------------------------------------
 % ACESSOR DO CASO (ver cabecalho)
@@ -81,16 +98,8 @@ if nargin == 1 && ischar(seed) && strcmp(seed, 'auxiliares')
     return;
 end
 
-if nargin < 1 || isempty(seed),   seed   = 42;            end
-if nargin < 2 || isempty(n_runs), n_runs = 5;             end
-if nargin < 3 || isempty(modo),   modo   = 'nao_linear';  end
-
-assert(any(strcmp(modo, {'linear', 'nao_linear'})), ...
-    'main_hadi_20barras:modoInvalido', ...
-    'modo deve ser ''linear'' ou ''nao_linear''. Recebido: ''%s''.', modo);
-
-garantir_caminhos();
-rng(seed);
+garantir_caminhos({'pso_rid', 'fem_nao_linear_solver'});
+n_workers = preparar_pool(n_workers, n_runs);
 
 % -------------------------------------------------------------------------
 % 1. PROBLEMA
@@ -143,27 +152,40 @@ pso_params.print_interval         = 100;
 
 imprimir_cabecalho(caso, seed, n_runs, pso_params, modo, ref_peso);
 
-historicos    = cell(n_runs, 1);
-pesos_por_run = nan(n_runs, 1);
-melhor_peso   = inf;
-melhor_areas  = [];
+historicos      = cell(n_runs, 1);
+pesos_por_run   = nan(n_runs, 1);
+areas_por_run   = cell(n_runs, 1);
+viaveis_por_run = false(n_runs, 1);
+linhas_log      = cell(n_runs, 1);
 
-for r = 1:n_runs
-    fprintf('--- Executando Run %d/%d ---\n', r, n_runs);
+% Cada run e independente; parfor-safe (n_workers=0 -> serial, o padrao)
+% exige semente PROPRIA por run — mesma razao/solucao de pso_rid.m (Secao C)
+% e main_hadi_nao_linear.m.
+parfor (r = 1:n_runs, n_workers)
+    rng(seed + r - 1, 'twister');
 
     [areas_r, peso_r, hist_r, det_r] = pso_rid(funcao_objetivo, caso.config_vars, pso_params);
 
-    historicos{r}    = hist_r;
-    pesos_por_run(r) = peso_r;
+    historicos{r}      = hist_r;
+    pesos_por_run(r)   = peso_r;
+    areas_por_run{r}   = areas_r;
+    viaveis_por_run(r) = (det_r.gbest_viol <= 0);
 
-    % Seleciona o melhor apenas entre solucoes VIAVEIS ([DEB2000] criterio 1)
-    if det_r.gbest_viol <= 0 && peso_r < melhor_peso
-        melhor_peso  = peso_r;
-        melhor_areas = areas_r;
+    linhas_log{r} = sprintf(['--- Run %d/%d ---\n    -> peso = %.2f kg | ' ...
+        'violacao = %.3e | iters = %d | avaliacoes FEM = %d\n\n'], ...
+        r, n_runs, peso_r, det_r.gbest_viol, det_r.iter_executadas, det_r.n_avaliacoes);
+end
+
+fprintf('%s', linhas_log{:});
+
+% Seleciona o melhor apenas entre solucoes VIAVEIS ([DEB2000] criterio 1).
+melhor_peso  = inf;
+melhor_areas = [];
+for r = 1:n_runs
+    if viaveis_por_run(r) && pesos_por_run(r) < melhor_peso
+        melhor_peso  = pesos_por_run(r);
+        melhor_areas = areas_por_run{r};
     end
-
-    fprintf('    -> Run %d: peso = %.2f kg | violacao = %.3e | iters = %d | avaliacoes FEM = %d\n\n', ...
-            r, peso_r, det_r.gbest_viol, det_r.iter_executadas, det_r.n_avaliacoes);
 end
 
 if isempty(melhor_areas)
@@ -672,13 +694,5 @@ end
 end
 
 
-function garantir_caminhos()
-% Adiciona as pastas do projeto ao path, caso o usuario chame o orquestrador
-% diretamente sem ter rodado setup_paths antes.
-if exist('pso_rid', 'file') == 2 && exist('fem_nao_linear_solver', 'file') == 2
-    return;
-end
-raiz = fullfile(fileparts(mfilename('fullpath')), '..');
-addpath(raiz);
-setup_paths(false);
-end
+% garantir_caminhos e preparar_pool sao helpers compartilhados em
+% 03_orquestrador/auxiliares/ — nao ha mais funcao local aqui.

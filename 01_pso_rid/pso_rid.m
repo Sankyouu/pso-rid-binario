@@ -1,4 +1,15 @@
 function [best_sol, best_cost, cost_history, details] = pso_rid(funcao_custo, config_vars, pso_params)
+arguments
+    % funcao_custo aceita tambem char/string por causa da chamada-sentinela
+    % pso_rid('auxiliares') — ver "ACESSO AOS AUXILIARES" abaixo. Sem
+    % restricao de tamanho: 'auxiliares' e um char array 1x11, nao 1x1.
+    funcao_custo {mustBeA(funcao_custo, ["function_handle","char","string"])}
+    % Default neutro (struct 0x0 com o campo 'tipo') para que a chamada de 1
+    % argumento (sentinela) passe pela validacao sem nunca ser lido de fato —
+    % o corpo retorna antes de qualquer acesso a config_vars nesse caminho.
+    config_vars struct = struct('tipo', {})
+    pso_params (1,1) struct = struct()
+end
 % PSO_RID  Particle Swarm Optimization Real-Inteiro-Discreto (codificacao binaria).
 %
 % -------------------------------------------------------------------------
@@ -15,14 +26,17 @@ function [best_sol, best_cost, cost_history, details] = pso_rid(funcao_custo, co
 %         B. BUSCA LOCAL NO g-BEST ....................... Sec. 5
 %         C. ATUALIZACAO DE VELOCIDADE E POSICAO ......... Eq. (1)-(2)
 %   >>> SAIDAS
-%   >>> LOCAL mapear_dimensoes ....... Eq. (5)      dimensoes da particula
-%   >>> LOCAL decodificar ............ Eq. (6)      binario -> real/int/discreto
-%   >>> LOCAL velocidade_binaria ..... Eq. (7)-(8)  velocidade binaria
-%   >>> LOCAL mutacao_polinomial ..... Eq. (9)      mutacao polinomial
-%   >>> LOCAL domina_deb ............. pag. 316     regra de viabilidade de Deb
-%   >>> LOCAL amostrar_particula ......... Sec. 4.1     inicializacao aleatoria
-%   >>> LOCAL get_param .................. utilitario   default de hiperparametro
+%   >>> LOCAL mapear_dimensoes ............. Eq. (5)     dimensoes da particula
+%   >>> LOCAL decodificar .................. Eq. (6)     binario -> real/int/discreto
+%   >>> LOCAL velocidade_binaria ........... Eq. (7)-(8) velocidade binaria (escalar)
+%   >>> LOCAL velocidade_binaria_vetorizada  Eq. (7)-(8) idem, sem laco (Secao C)
+%   >>> LOCAL mutacao_polinomial ........... Eq. (9)     mutacao polinomial
+%   >>> LOCAL domina_deb ................... pag. 316    regra de viabilidade de Deb
+%   >>> LOCAL progresso_deb ................ [D9]        criterio de estagnacao
+%   >>> LOCAL amostrar_particula ........... Sec. 4.1    inicializacao aleatoria
+%   >>> LOCAL get_param .................... utilitario  default de hiperparametro
 %
+% See also fem_nao_linear_solver, fem_linear_solver
 % -------------------------------------------------------------------------
 % REFERENCIAS TEORICAS
 % -------------------------------------------------------------------------
@@ -47,7 +61,21 @@ function [best_sol, best_cost, cost_history, details] = pso_rid(funcao_custo, co
 %                    .tipo = 'R' (real)     -> requer .min e .max
 %                    .tipo = 'I' (inteiro)  -> requer .min e .max
 %                    .tipo = 'D' (discreto) -> requer .opcoes (vetor)
-%   pso_params   : (opcional) struct de hiperparametros
+%   pso_params   : (opcional) struct de hiperparametros. Alem dos ja
+%                  documentados na secao HIPERPARAMETROS abaixo, aceita
+%                  .n_workers (padrao 0): liga parfor OPCIONAL na avaliacao
+%                  de particulas (Secao A do loop principal). 0 = serial,
+%                  identico ao comportamento de sempre; so compensa quando
+%                  funcao_custo e cara (ex.: FEM nao linear) — ver a nota
+%                  completa junto a extracao de n_workers, mais abaixo.
+%
+% [ATENCAO REPRODUTIBILIDADE] A Secao C (atualizacao de velocidade/posicao)
+% e vetorizada: para a MESMA semente, os resultados NAO reproduzem mais
+% bit-a-bit os de versoes anteriores deste arquivo (a ordem de consumo de
+% rand() mudou). A logica e identica — Eq. (1)-(2), V_max, clamp, Eq. (7)-(8)
+% — so a forma de calcular. Resultados publicados em 04_resultados/ antes
+% desta mudanca (e a evidencia numerica de D1/D9) foram gerados com a versao
+% anterior e nao sao diretamente reproduziveis com a mesma seed nesta.
 %
 % SAIDAS
 %   best_sol     : melhor solucao decodificada
@@ -122,7 +150,7 @@ end
 campos_reconhecidos = {'n_particulas', 'max_iter', 'w', 'c1', 'c2', 'pm', ...
                        'auto_adaptativo', 'eta_min', 'eta_max', 'p_busca_local', ...
                        'tol_estagnacao', 'reinit_freq', 'reinit_pct', ...
-                       'decodificacao_discreta', ...
+                       'decodificacao_discreta', 'n_workers', ...
                        'verbose', 'print_interval'};
 campos_desconhecidos = setdiff(fieldnames(pso_params), campos_reconhecidos);
 if ~isempty(campos_desconhecidos)
@@ -201,6 +229,22 @@ reinit_pct      = get_param(pso_params, 'reinit_pct',    0.10);
 verbose         = get_param(pso_params, 'verbose',       true);
 print_interval  = get_param(pso_params, 'print_interval', 100);
 
+% -------------------------------------------------------------------------
+% n_workers — paralelismo OPCIONAL da Secao A (avaliacao de funcao_custo por
+% particula), via parfor. PADRAO 0 (serial, comportamento identico ao laco
+% for de sempre). A avaliacao por particula nao usa rand() em nenhum
+% caminho (decodificar/funcao_custo/domina_deb sao deterministicos), entao
+% ligar isto NAO afeta a reprodutibilidade por semente.
+%
+% So compensa quando funcao_custo e cara (ex.: FEM nao linear). Em
+% objetivos analiticos baratos (trem de engrenagens, mola) o overhead de
+% dispatch por iteracao do PSO (ate max_iter vezes) supera o ganho — meca
+% antes de ligar por padrao. preparar_pool.m aplica um teto por MEMORIA
+% disponivel, nao por numero de nucleos (ver 03_orquestrador/auxiliares/
+% preparar_pool.m).
+n_workers_pedido = get_param(pso_params, 'n_workers', 0);
+n_workers        = preparar_pool(n_workers_pedido, n_particulas);
+
 % eta sorteado uma vez por execucao ("in different runs of a problem")
 
 eta_run = eta_min + rand * (eta_max - eta_min);
@@ -221,6 +265,19 @@ for k = 1:length(mapa_dimensoes)
         orig_por_dim(d) = mapa_dimensoes(k).idx_original;
     end
 end
+
+% Mascaras e limites por dimensao, pre-computados uma unica vez para a
+% Secao C vetorizada (evita reler config_vars(orig_d).min/max a cada
+% iteracao do laco principal — leitura de struct e o que mais custa ali).
+idx_real  = strcmp(tipo_por_dim, 'R').';   % 1 x total_dim (linha)
+idx_bin   = ~idx_real;
+vmin_vec  = nan(1, total_dim);
+vmax_vec  = nan(1, total_dim);
+for d = find(idx_real)
+    vmin_vec(d) = config_vars(orig_por_dim(d)).min;
+    vmax_vec(d) = config_vars(orig_por_dim(d)).max;
+end
+v_lim_vec = (vmax_vec - vmin_vec) / 2;   % so definido onde idx_real; NaN no resto
 
 % -------------------------------------------------------------------------
 % >>> INICIALIZACAO DO ENXAME
@@ -285,9 +342,24 @@ for iter = 1:max_iter
     % ---------------------------------------------------------------------
     % A. AVALIACAO E ATUALIZACAO DE p-BEST / g-BEST
     %    Eq. (3) e (4) [DF2011], dominancia de [DEB2000] pag. 316
+    %
+    %    A avaliacao de funcao_custo por particula (tipicamente um solve de
+    %    FEM inteiro) e independente entre particulas e NAO usa rand() em
+    %    nenhum caminho — decodificar, funcao_custo e domina_deb sao
+    %    deterministicos. Por isso ela roda num parfor (n_workers, ver
+    %    hiperparametro acima; 0 = serial, comportamento identico ao laco
+    %    for original). A atualizacao de p-best/g-best logo depois TEM
+    %    dependencia de ordem (o vencedor de um empate exato depende de quem
+    %    e processado primeiro) e por isso fica num laco serial SEPARADO —
+    %    parfor nao garante ordem de conclusao entre workers, entao nenhuma
+    %    logica sequencial pode morar dentro dele.
     % ---------------------------------------------------------------------
-    
-    for i = 1:n_particulas
+
+    custo_p    = inf(n_particulas, 1);
+    viol_p     = inf(n_particulas, 1);
+    overflow_p = false(n_particulas, 1);
+
+    parfor (i = 1:n_particulas, n_workers)
         [vars_i, viol_estrutural] = decodificar(pos(i,:), mapa_dimensoes, ...
                                                     config_vars, decod_discreta);
 
@@ -305,18 +377,22 @@ for iter = 1:max_iter
             % Inf < Inf e falso (nenhuma preferencia entre estouros) e
             % 1e8 < Inf e verdadeiro (avaliavel vence estouro).
 
-            custo_atual = inf;
-            viol_atual  = inf;
-            n_overflow  = n_overflow + 1;
+            custo_p(i)    = inf;
+            viol_p(i)     = inf;
+            overflow_p(i) = true;
         else
-            [custo_atual, viol_atual] = funcao_custo(vars_i);
-            n_avaliacoes = n_avaliacoes + 1;
+            [custo_p(i), viol_p(i)] = funcao_custo(vars_i);
         end
+    end
 
+    n_overflow   = n_overflow   + sum(overflow_p);
+    n_avaliacoes = n_avaliacoes + sum(~overflow_p);
+
+    for i = 1:n_particulas
         % Eq. (3) [DF2011]: atualizacao do p-best
-        if domina_deb(custo_atual, viol_atual, pbest_custo(i), pbest_viol(i))
-            pbest_custo(i) = custo_atual;
-            pbest_viol(i)  = viol_atual;
+        if domina_deb(custo_p(i), viol_p(i), pbest_custo(i), pbest_viol(i))
+            pbest_custo(i) = custo_p(i);
+            pbest_viol(i)  = viol_p(i);
             pbest_pos(i,:) = pos(i,:);
         end
 
@@ -429,71 +505,68 @@ for iter = 1:max_iter
     end
 
     % ---------------------------------------------------------------------
-    % C. ATUALIZACAO DE VELOCIDADE E POSICAO
+    % C. ATUALIZACAO DE VELOCIDADE E POSICAO (vetorizada)
     % ---------------------------------------------------------------------
+    % [ATENCAO REPRODUTIBILIDADE] Esta secao foi vetorizada (matrizes
+    % n_particulas x total_dim em vez do laco duplo original). Isso muda a
+    % ORDEM de consumo de rand() em relacao a versoes anteriores deste
+    % arquivo: a mesma semente ja NAO reproduz mais bit-a-bit resultados
+    % publicados antes desta mudanca (ver nota no cabecalho do arquivo).
+    % A logica em si — Eq. (1)-(2), V_max, clamp de posicao, Eq. (7)-(8) —
+    % e identica; so a forma de calcular mudou.
 
-    for i = 1:n_particulas
-        for d = 1:total_dim
-            orig_d = orig_por_dim(d);
-            r1 = rand; r2 = rand;
+    r1 = rand(n_particulas, total_dim);
+    r2 = rand(n_particulas, total_dim);
 
-            % Eq. (1) [DF2011]:
-            %   v = w*v + c1*r1*(pbest - x) + c2*r2*(gbest - x)
-            % Para dimensoes binarias, este valor real e a "tendencia" que
-            % sera mapeada para {-1,0,+1} pela Eq. (8).
+    % Eq. (1) [DF2011]: v = w*v + c1*r1*(pbest - x) + c2*r2*(gbest - x)
+    % gbest_pos e 1 x total_dim; o subtraendo expande implicitamente contra
+    % as n_particulas linhas de pos.
+    tendencia = w_atual * vel ...
+              + c1_atual * r1 .* (pbest_pos - pos) ...
+              + c2_atual * r2 .* (gbest_pos - pos);
 
-            tendencia = w_atual * vel(i,d) ...
-                      + c1_atual * r1 * (pbest_pos(i,d) - pos(i,d)) ...
-                      + c2_atual * r2 * (gbest_pos(d)   - pos(i,d));
+    % ---------- DIMENSOES REAIS ----------
+    if any(idx_real)
+        % --- LIMITE DE VELOCIDADE (V_max) ---
+        % Nao consta de [DF2011], mas e pratica padrao do PSO continuo desde
+        % Shi & Eberhart (1998), "A modified particle swarm optimizer", IEEE
+        % ICEC, p. 69-73: sem teto, o termo de inercia w*v acumula e a
+        % particula passa a saltar de um extremo do dominio ao outro,
+        % perdendo a capacidade de refinar. V_max = k*(x_max-x_min), k=0.5
+        % (v_lim_vec, pre-computado antes do laco principal).
+        v_novo = max(-v_lim_vec(idx_real), ...
+                      min(v_lim_vec(idx_real), tendencia(:,idx_real)));
+        vel(:,idx_real) = v_novo;
 
-            if strcmp(tipo_por_dim{d}, 'R')
+        % Eq. (2) [DF2011]: x^(t+1) = x^(t) + v^(t+1)
+        pos_novo = pos(:,idx_real) + v_novo;
 
-                % ---------- VARIAVEL REAL ----------
+        % --- CLAMP DE POSICAO ---
+        % Obrigatorio, nao opcional. Sem ele, uma dimensao real fora de
+        % [min, max] quebra dois consumidores a jusante:
+        %   (a) mutacao_polinomial eleva (x_u-x)/(x_u-x_l) a potencia
+        %       (eta+1) com eta REAL; base negativa e expoente fracionario
+        %       dao resultado COMPLEXO, que o min/max final daquela funcao
+        %       nao detecta (MATLAB compara complexos por modulo);
+        %   (b) decodificar repassa o valor cru a funcao de custo — uma
+        %       area negativa produz matriz de rigidez sem sentido fisico.
+        % [DF2011] trata limites como restricao no caso INTEIRO (ver [D2]),
+        % mas ali o valor cru ainda e avaliavel; aqui nao e, entao a
+        % saturacao e a unica saida coerente.
+        pos(:,idx_real) = max(vmin_vec(idx_real), ...
+                               min(vmax_vec(idx_real), pos_novo));
+    end
 
-                vmin_d = config_vars(orig_d).min;
-                vmax_d = config_vars(orig_d).max;
-
-                % --- LIMITE DE VELOCIDADE (V_max) ---
-                % Nao consta de [DF2011], mas e pratica padrao do PSO
-                % continuo desde Shi & Eberhart (1998), "A modified
-                % particle swarm optimizer", IEEE ICEC, p. 69-73: sem
-                % teto, o termo de inercia w*v acumula e a particula
-                % passa a saltar de um extremo do dominio ao outro,
-                % perdendo a capacidade de refinar. A recomendacao usual
-                % e V_max = k*(x_max - x_min) com k em [0.1, 1.0]; usamos
-                % k = 0.5.
-
-                v_lim    = (vmax_d - vmin_d) / 2;
-                vel(i,d) = max(-v_lim, min(v_lim, tendencia));
-
-                % Eq. (2) [DF2011]: x^(t+1) = x^(t) + v^(t+1)
-                pos(i,d) = pos(i,d) + vel(i,d);
-
-                % --- CLAMP DE POSICAO ---
-                % Obrigatorio, nao opcional. Sem ele, uma dimensao real
-                % fora de [min, max] quebra dois consumidores a jusante:
-                %   (a) mutacao_polinomial eleva (x_u - x)/(x_u - x_l) a
-                %       potencia (eta+1) com eta REAL; base negativa e
-                %       expoente fracionario dao resultado COMPLEXO, que
-                %       o min/max final daquela funcao nao detecta
-                %       (MATLAB compara complexos por modulo);
-                %   (b) decodificar repassa o valor cru a funcao de
-                %       custo — uma area negativa produz matriz de
-                %       rigidez sem sentido fisico no FEM.
-                % [DF2011] trata limites como restricao no caso INTEIRO
-                % (ver [D2]), mas ali o valor cru ainda e avaliavel; aqui
-                % nao e, entao a saturacao e a unica saida coerente.
-
-                pos(i,d) = max(vmin_d, min(vmax_d, pos(i,d)));
-
-            else
-                % ---------- VARIAVEL BINARIA ----------
-                % [D3][D4] Eq. (7)-(8) e Tabelas 1-2 [DF2011]
-                [v_next, x_next] = velocidade_binaria(pos(i,d), tendencia, pm_atual);
-                vel(i,d) = v_next;
-                pos(i,d) = x_next;
-            end
-        end
+    % ---------- DIMENSOES BINARIAS ----------
+    % [D3][D4] Eq. (7)-(8) e Tabelas 1-2 [DF2011], via a versao vetorizada
+    % de velocidade_binaria (mesma logica das Tabelas 1-2, sem laco). A
+    % funcao ESCALAR velocidade_binaria permanece intocada — continua usada
+    % pela Secao B (busca local) e pelo acessor pso_rid('auxiliares').
+    if any(idx_bin)
+        [v_bin, x_bin] = velocidade_binaria_vetorizada( ...
+                             pos(:,idx_bin), tendencia(:,idx_bin), pm_atual);
+        vel(:,idx_bin) = v_bin;
+        pos(:,idx_bin) = x_bin;
     end
 end
 
@@ -829,6 +902,67 @@ end
 
 % Eq. (2)/(7) [DF2011]: por construcao das transicoes admissiveis, a soma
 % resulta sempre em {0,1} — nao ha necessidade de saturacao.
+x_next = x_atual + v_next;
+
+end
+
+
+% -------------------------------------------------------------------------
+% >>> velocidade_binaria_vetorizada — mesma logica de velocidade_binaria,
+%     sem laco (usada pela Secao C, hot path de n_particulas x total_dim)
+% -------------------------------------------------------------------------
+
+function [v_next, x_next] = velocidade_binaria_vetorizada(x_atual, tendencia, pm)
+% VELOCIDADE_BINARIA_VETORIZADA  Versao elemento-a-elemento de velocidade_binaria.
+%
+% Implementa exatamente a mesma logica de velocidade_binaria (Eq. 7-8,
+% Tabelas 1-2 [DF2011]) sobre matrizes inteiras em vez de escalares, para
+% evitar o laco duplo da Secao C. A funcao ESCALAR velocidade_binaria NAO e
+% alterada nem substituida — continua sendo a usada pela Secao B (busca
+% local) e exposta pelo acessor pso_rid('auxiliares'). Esta versao e uso
+% interno exclusivo da Secao C.
+%
+% ENTRADAS (todas do mesmo tamanho N x M)
+%   x_atual   : bits atuais (cada elemento 0 ou 1)
+%   tendencia : valores REAIS de velocidade (Eq. 1)
+%   pm        : probabilidade de mutacao (escalar, igual para todos)
+%
+% SAIDAS (N x M)
+%   v_next : velocidade discreta resultante (-1, 0 ou +1) por elemento
+%   x_next : nova posicao binaria (garantidamente 0 ou 1) por elemento
+
+assert(all(x_atual(:) == 0 | x_atual(:) == 1), ...
+    'velocidade_binaria_vetorizada:posicaoInvalida', ...
+    'Todo elemento de x_atual deve ser 0 ou 1.');
+
+[n, m] = size(x_atual);
+
+% Empate exato (tendencia==0): sorteio 50/50 por elemento — mesma regra do
+% caso escalar ("In the case of double options, each value is considered
+% with 50% probability", [DF2011] Sec. 4.3).
+empate         = (tendencia == 0);
+sorteio_empate = rand(n, m) < 0.5;
+
+% ---- Tabela 1 [DF2011] (x=0): v_det em {0, +1} ----
+v_det_x0 = zeros(n, m);
+v_det_x0(tendencia > 0) = 1;
+v_det_x0(empate)        = double(sorteio_empate(empate));
+
+% ---- Tabela 2 [DF2011] (x=1): v_det em {0, -1} ----
+v_det_x1 = zeros(n, m);
+v_det_x1(tendencia < 0) = -1;
+v_det_x1(empate)        = -double(sorteio_empate(empate));
+
+x_eh_zero = (x_atual == 0);
+v_det     = v_det_x0 .* x_eh_zero + v_det_x1 .* ~x_eh_zero;
+v_alt     = (1 - v_det) .* x_eh_zero + (-1 - v_det) .* ~x_eh_zero;
+
+% Randomizacao pela probabilidade de mutacao p_m (coluna 7 das Tabelas 1-2)
+usa_alt         = rand(n, m) < pm;
+v_next          = v_det;
+v_next(usa_alt) = v_alt(usa_alt);
+
+% Eq. (2)/(7) [DF2011]: por construcao, a soma resulta sempre em {0,1}.
 x_next = x_atual + v_next;
 
 end

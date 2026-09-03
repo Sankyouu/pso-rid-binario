@@ -29,7 +29,7 @@ O projeto é dividido em três blocos **testáveis isoladamente**:
 CPIO III/
 │
 ├── 01_pso_rid/                  ◄── BLOCO 1: otimizador
-│   ├── pso_rid.m                    ARQUIVO ÚNICO: loop do PSO + todas as peças
+│   ├── pso_rid.m                    arquivo unico: loop do PSO + todas as peças
 │   │                                como funções locais (ver tabela abaixo)
 │   └── pso_classico.m               PSO contínuo padrão (referência)
 │
@@ -38,18 +38,20 @@ CPIO III/
 │   └── fem_linear_solver.m          análise elástica linear
 │
 ├── 03_orquestrador/             ◄── BLOCO 3: experimentos + definição dos casos
-│   ├── main_hadi_nao_linear.m       benchmark principal + DEFINE o caso Hadi
+│   ├── main_hadi_nao_linear.m       benchmark principal + define o caso Hadi
 │   ├── main_hadi_linear.m           contraparte linear (comparação)
-│   ├── main_hadi_20barras.m         treliça 20 barras + DEFINE o caso de 20 barras
-│   ├── main_hadi_51barras.m         treliça cobertura 51 barras + DEFINE o caso
-│   ├── main_awruch_discreto.m       catálogos por barra + DEFINE o caso Awruch
+│   ├── main_hadi_20barras.m         treliça 20 barras + define o caso de 20 barras
+│   ├── main_hadi_51barras.m         treliça cobertura 51 barras + define o caso
+│   ├── main_awruch_discreto.m       catálogos por barra + define o caso Awruch
 │   ├── main_datta_engrenagens.m     trem de engrenagens [DF2011] (não usa FEM)
 │   ├── main_datta_mola.m            mola de compressão [DF2011] (usa R, I e D)
 │   ├── main_estudo_estatistico.m    comparação multi-semente de configurações
-│   └── auxiliares/                  só blocos longos de impressão/gráfico
+│   └── auxiliares/                  blocos longos de impressão/gráfico + helpers
 │       ├── relatorio_comparativo.m
 │       ├── plot_convergencia.m
-│       └── salvar_figura.m
+│       ├── salvar_figura.m
+│       ├── garantir_caminhos.m      path do projeto, compartilhado pelos orquestradores
+│       └── preparar_pool.m          pool paralelo com teto por memória, não por núcleos
 │
 ├── 04_resultados/               figuras e logs gerados
 ├── 05_legado/                   versões anteriores, para comparação
@@ -85,7 +87,7 @@ solução fechada usado só para validar o Newton-Raphson, sem nenhum orquestrad
 
 ### Dentro de `pso_rid.m`
 
-O algoritmo inteiro vive em **um arquivo só**. Cada fórmula do artigo continua sendo uma função separada — só
+O algoritmo inteiro vive em um arquivo só. Cada fórmula do artigo continua sendo uma função separada — só
 que como *função local*, no fim do mesmo `.m`. Para navegar, busque pela marca `>>>`:
 
 | Função local | Equação | Papel |
@@ -121,8 +123,8 @@ main_hadi_20barras(42,5,'linear')  % mesma treliça, análise linear
 main_hadi_51barras           % treliça de cobertura, 4 grupos, 2 hipóteses de carga
 main_hadi_51barras(42,5,'nao_linear',true)  % Case 3, com flambagem
 main_awruch_discreto         % catálogos independentes por barra
-main_datta_engrenagens       % trem de engrenagens, 4 variáveis INTEIRAS
-main_datta_mola              % mola: única com variável REAL + INTEIRA + DISCRETA
+main_datta_engrenagens       % trem de engrenagens, 4 variáveis inteiras
+main_datta_mola              % mola: única com variável real + inteira + discreta
 main_estudo_estatistico(5)   % comparação multi-semente (5 sementes)
 ```
 
@@ -131,6 +133,29 @@ Todos aceitam argumentos opcionais e devolvem um struct com os resultados:
 ```matlab
 r = main_hadi_nao_linear(123, 10);   % semente 123, 10 execuções
 ```
+
+---
+
+## Desempenho e paralelismo
+
+Os solvers FEM e o laço interno do `pso_rid` são vetorizados. Paralelismo é
+opcional, via `n_workers`:
+
+- `pso_rid`: `pso_params.n_workers` paraleliza a avaliação de partículas. Não
+  usa números aleatórios, então não afeta reprodutibilidade.
+- Orquestradores: último argumento posicional paraleliza o laço multi-start —
+  `main_hadi_nao_linear(seed, n_runs, n_workers)`. Cada run passa a ter
+  semente própria em vez de compartilhar o mesmo fluxo aleatório.
+
+Em ambos os casos `n_workers = 0` (padrão) é serial. `preparar_pool.m` limita
+workers pela memória disponível, não pelo número de núcleos, para não travar
+a máquina. Detalhes e evidência em
+`00_docs/notas_e_relatorios/relatorio_mudancas_2026-09-03.md`.
+
+> A vetorização do `pso_rid` e a semente própria por run mudam a sequência de
+> números aleatórios consumida: a mesma seed não reproduz mais bit a bit
+> resultados gerados antes de 2026-09-03, inclusive os publicados em
+> `04_resultados/`.
 
 ---
 
@@ -157,6 +182,7 @@ runtests('06_testes/TestFemNaoLinear.m')           % um bloco só
 | `TestFemLinear.m` | 2 | soluções fechadas, simetria, linearidade, equilíbrio |
 | `TestFemNaoLinear.m` | 2 | **validação analítica exata**, equilíbrio, limite linear |
 | `TestIntegracao.m` | 1+2+3 | interfaces entre blocos, ciclo completo, reprodutibilidade |
+| `TestOrquestradoresNovos.m` | 3 | reprodução dos valores publicados (20/51 barras, engrenagens, mola) |
 
 ---
 
@@ -172,7 +198,7 @@ análise linear erra 37,9%.
 > (Crisfield, Yaw) usam **deformação de Green** e *não* são diretamente comparáveis — usá-las
 > produziria um desacordo que seria erroneamente lido como bug.
 
-### Discrepância do peso — **resolvida** (2026-08-31)
+### Discrepância do peso — **resolvida**
 
 `[HA2003]` enuncia o problema em SI, mas todos os valores são conversões de números
 redondos **imperiais**: 9144 mm = 360 in, 50,80 mm = 2 in, 172,25 MPa = 25 ksi,
@@ -312,3 +338,7 @@ transferir. E D6 (reinicialização) nunca foi medido.
 - **`relatorio_decisoes_2026-08-31.md`** — decisão D1, resolução da discrepância de peso
   (unidades imperiais), caracterização da discrepância de deslocamento, e as pendências
   menores fechadas
+- `relatorio_mudancas_2026-09-03.md` — vetorização, `parfor` opcional e blocos
+  `arguments` no `pso_rid`, nos solvers FEM e nos orquestradores
+- `skills_matlab_agentic_toolkit_2026-09-03.md` — skills do toolkit aplicáveis ao
+  projeto, por área

@@ -1,4 +1,11 @@
-function resultado = main_datta_engrenagens(seed, n_runs)
+function resultado = main_datta_engrenagens(seed, n_runs, n_workers)
+arguments
+    % seed aceita tambem char/string por causa das chamadas-sentinela
+    % main_datta_engrenagens('caso') / ('auxiliares') — ver mais abaixo.
+    seed {mustBeA(seed, ["double","char","string"])} = 42
+    n_runs    (1,1) double {mustBePositive, mustBeInteger} = 30   % [DF2011]: 30 execucoes
+    n_workers (1,1) double {mustBeNonnegative, mustBeInteger} = 0
+end
 % MAIN_DATTA_ENGRENAGENS  Projeto do trem de engrenagens de [DF2011] Sec. 5.1.
 %
 % -------------------------------------------------------------------------
@@ -81,12 +88,22 @@ function resultado = main_datta_engrenagens(seed, n_runs)
 %   main_datta_engrenagens              % semente 42, 30 execucoes (protocolo
 %                                       % do artigo)
 %   main_datta_engrenagens(7, 100)      % outra semente, 100 execucoes
+%   main_datta_engrenagens(7, 100, 3)   % ate 3 workers em paralelo
 %   caso = main_datta_engrenagens('caso');
 %   r = main_datta_engrenagens;
+%
+% n_workers (padrao 0 = serial) paraleliza o laco multi-start via parfor.
+% Efeito colateral aceito: cada run passa a ter semente PROPRIA em vez de
+% todas consumirem o mesmo stream em sequencia — ver a nota completa em
+% main_hadi_nao_linear.m. preparar_pool.m aplica um teto por memoria
+% disponivel, nao por nucleos. Como o objetivo aqui e analitico e barato,
+% meca antes de esperar ganho real (ver nota sobre n_workers em pso_rid.m).
 %
 % SAIDA
 %   resultado : struct com .melhor_z .melhor_f .razao .erro_pct .taxa_sucesso
 %               .f_por_run .z_por_run .historicos .caso .seed
+%
+% See also pso_rid, main_datta_mola
 
 % -------------------------------------------------------------------------
 % ACESSOR DO CASO
@@ -107,11 +124,8 @@ if nargin == 1 && ischar(seed) && strcmp(seed, 'auxiliares')
     return;
 end
 
-if nargin < 1 || isempty(seed),   seed   = 42; end
-if nargin < 2 || isempty(n_runs), n_runs = 30; end   % [DF2011]: 30 execucoes
-
-garantir_caminhos();
-rng(seed);
+garantir_caminhos({'pso_rid'});
+n_workers = preparar_pool(n_workers, n_runs);
 
 caso = caso_engrenagens();
 
@@ -157,28 +171,43 @@ historicos = cell(n_runs, 1);
 f_por_run  = nan(n_runs, 1);
 z_por_run  = nan(n_runs, 4);
 enxames    = nan(n_runs, 1);
-melhor_f   = inf;
-melhor_z   = [];
+linhas_log = cell(n_runs, 1);
 
-for r = 1:n_runs
+% Cada run e independente; parfor-safe (n_workers=0 -> serial, o padrao)
+% exige semente PROPRIA por run — mesma razao/solucao de pso_rid.m (Secao C)
+% e main_hadi_nao_linear.m. pso_params e usado como BROADCAST (somente
+% leitura) dentro do parfor: o enxame sorteado por run vai para uma copia
+% LOCAL (params_r), nunca escrita de volta em pso_params — mutar uma
+% broadcast variable dentro de parfor nao e permitido.
+parfor (r = 1:n_runs, n_workers)
+    rng(seed + r - 1, 'twister');
+
     % [DF2011] Sec. 5: tamanho do enxame sorteado em [50,100] a cada execucao
-    pso_params.n_particulas = randi([50, 100]);
-    enxames(r) = pso_params.n_particulas;
+    params_r = pso_params;
+    params_r.n_particulas = randi([50, 100]);
+    enxames(r) = params_r.n_particulas;
 
-    [z_r, f_r, hist_r, det_r] = pso_rid(funcao_objetivo, caso.config_vars, pso_params);
+    [z_r, f_r, hist_r, det_r] = pso_rid(funcao_objetivo, caso.config_vars, params_r);
 
     historicos{r}  = hist_r;
     f_por_run(r)   = f_r;
     z_por_run(r,:) = z_r;
 
-    if f_r < melhor_f
-        melhor_f = f_r;
-        melhor_z = z_r;
-    end
+    linhas_log{r} = sprintf(['  Run %2d/%d | enxame %3d | z = [%2d %2d %2d %2d] | f = %.4e | ' ...
+        'razao = %.6f | iters %4d | overflow %d\n'], ...
+        r, n_runs, enxames(r), z_r(1), z_r(2), z_r(3), z_r(4), f_r, ...
+        razao(z_r), det_r.iter_executadas, det_r.n_overflow);
+end
 
-    fprintf('  Run %2d/%d | enxame %3d | z = [%2d %2d %2d %2d] | f = %.4e | razao = %.6f | iters %4d | overflow %d\n', ...
-            r, n_runs, enxames(r), z_r(1), z_r(2), z_r(3), z_r(4), f_r, ...
-            razao(z_r), det_r.iter_executadas, det_r.n_overflow);
+fprintf('%s', linhas_log{:});
+
+melhor_f = inf;
+melhor_z = [];
+for r = 1:n_runs
+    if f_por_run(r) < melhor_f
+        melhor_f = f_por_run(r);
+        melhor_z = z_por_run(r,:);
+    end
 end
 
 % -------------------------------------------------------------------------
@@ -508,12 +537,5 @@ hold off;
 end
 
 
-function garantir_caminhos()
-% Este orquestrador precisa apenas do Bloco 1 (nao usa o FEM).
-if exist('pso_rid', 'file') == 2
-    return;
-end
-raiz = fullfile(fileparts(mfilename('fullpath')), '..');
-addpath(raiz);
-setup_paths(false);
-end
+% garantir_caminhos e preparar_pool sao helpers compartilhados em
+% 03_orquestrador/auxiliares/ — nao ha mais funcao local aqui.

@@ -1,4 +1,11 @@
-function resultado = main_hadi_nao_linear(seed, n_runs)
+function resultado = main_hadi_nao_linear(seed, n_runs, n_workers)
+arguments
+    % seed aceita tambem char/string por causa da chamada-sentinela
+    % main_hadi_nao_linear('caso') — ver mais abaixo.
+    seed {mustBeA(seed, ["double","char","string"])} = 42
+    n_runs    (1,1) double {mustBePositive, mustBeInteger} = 5
+    n_workers (1,1) double {mustBeNonnegative, mustBeInteger} = 0
+end
 % MAIN_HADI_NAO_LINEAR  Otimizacao da trelica de 10 barras com analise NAO LINEAR.
 %
 % -------------------------------------------------------------------------
@@ -44,11 +51,20 @@ function resultado = main_hadi_nao_linear(seed, n_runs)
 %   main_hadi_nao_linear              % semente 42, 5 execucoes
 %   main_hadi_nao_linear(123)         % outra semente
 %   main_hadi_nao_linear(42, 10)      % 10 execucoes
+%   main_hadi_nao_linear(42, 5, 3)    % 10 execucoes, ate 3 workers em paralelo
 %   r = main_hadi_nao_linear;         % devolve struct com os resultados
+%
+% n_workers (padrao 0 = serial) paraleliza o laco multi-start via parfor.
+% Efeito colateral aceito: cada run passa a ter semente PROPRIA
+% (seed + run - 1) em vez de todas consumirem o mesmo stream em sequencia —
+% necessario para o parfor ser seguro, e documentado na Secao 4 abaixo.
+% preparar_pool.m aplica um teto por MEMORIA disponivel, nao por nucleos.
 %
 % SAIDA
 %   resultado : struct com .melhor_areas .melhor_peso .violacao .Sigma .u
 %               .historicos .pesos_por_run .caso
+%
+% See also pso_rid, fem_nao_linear_solver, main_hadi_linear
 
 % -------------------------------------------------------------------------
 % ACESSOR DO CASO: main_hadi_nao_linear('caso') devolve so o struct do
@@ -60,11 +76,8 @@ if nargin == 1 && ischar(seed) && strcmp(seed, 'caso')
     return;
 end
 
-if nargin < 1 || isempty(seed),   seed   = 42; end
-if nargin < 2 || isempty(n_runs), n_runs = 5;  end
-
-garantir_caminhos();
-rng(seed);
+garantir_caminhos({'pso_rid', 'fem_nao_linear_solver'});
+n_workers = preparar_pool(n_workers, n_runs);
 
 % -------------------------------------------------------------------------
 % 1. PROBLEMA — apenas parametros, nenhuma logica (funcao local no fim)
@@ -108,28 +121,51 @@ pso_params.print_interval         = 100;
 
 imprimir_cabecalho(caso, seed, n_runs, pso_params, 'NAO LINEAR');
 
-historicos    = cell(n_runs, 1);
-pesos_por_run = nan(n_runs, 1);
-melhor_peso   = inf;
-melhor_areas  = [];
+historicos      = cell(n_runs, 1);
+pesos_por_run   = nan(n_runs, 1);
+areas_por_run   = cell(n_runs, 1);
+viaveis_por_run = false(n_runs, 1);
+linhas_log      = cell(n_runs, 1);
 
-for r = 1:n_runs
-    fprintf('--- Executando Run %d/%d ---\n', r, n_runs);
+% Cada run e independente. Rodar em parfor (n_workers=0 -> serial, o padrao)
+% exige que cada run tenha sua PROPRIA semente explicita, em vez de todas
+% consumirem em sequencia o mesmo stream global — o mesmo motivo, e a mesma
+% solucao, ja documentados em pso_rid.m (Secao C) e no cabecalho deste
+% arquivo. Consequencia: o resultado da run r passa a depender so de "seed"
+% e "r", nao de quantas runs vieram antes.
+%
+% [NOTA] fprintf de dentro de pso_rid (pso_params.verbose) ainda pode
+% intercalar entre workers quando n_workers>0 — e cosmetico, nao afeta o
+% resultado. As linhas de resumo abaixo (linhas_log) sao guardadas e
+% impressas em ordem DEPOIS do laco, como em main_estudo_estatistico.m.
+
+parfor (r = 1:n_runs, n_workers)
+    rng(seed + r - 1, 'twister');   % semente propria por run — parfor-safe
 
     [areas_r, peso_r, hist_r, det_r] = pso_rid(funcao_objetivo, caso.config_vars, pso_params);
 
-    historicos{r}    = hist_r;
-    pesos_por_run(r) = peso_r;
+    historicos{r}      = hist_r;
+    pesos_por_run(r)   = peso_r;
+    areas_por_run{r}   = areas_r;
+    viaveis_por_run(r) = (det_r.gbest_viol <= 0);
 
-    % Seleciona o melhor apenas entre solucoes VIAVEIS ([DEB2000] criterio 1)
+    linhas_log{r} = sprintf(['--- Run %d/%d ---\n    -> peso = %.2f kg | ' ...
+        'violacao = %.3e | iters = %d | avaliacoes FEM = %d\n\n'], ...
+        r, n_runs, peso_r, det_r.gbest_viol, det_r.iter_executadas, det_r.n_avaliacoes);
+end
 
-    if det_r.gbest_viol <= 0 && peso_r < melhor_peso
-        melhor_peso  = peso_r;
-        melhor_areas = areas_r;
+fprintf('%s', linhas_log{:});
+
+% Seleciona o melhor apenas entre solucoes VIAVEIS ([DEB2000] criterio 1).
+% Fica em laco serial separado — nao pode entrar no parfor porque tem
+% dependencia de ORDEM entre iteracoes (reducao sequencial).
+melhor_peso  = inf;
+melhor_areas = [];
+for r = 1:n_runs
+    if viaveis_por_run(r) && pesos_por_run(r) < melhor_peso
+        melhor_peso  = pesos_por_run(r);
+        melhor_areas = areas_por_run{r};
     end
-
-    fprintf('    -> Run %d: peso = %.2f kg | violacao = %.3e | iters = %d | avaliacoes FEM = %d\n\n', ...
-            r, peso_r, det_r.gbest_viol, det_r.iter_executadas, det_r.n_avaliacoes);
 end
 
 if isempty(melhor_areas)
@@ -475,14 +511,6 @@ fprintf(' ------------------------------------------------------------\n\n');
 end
 
 
-function garantir_caminhos()
-
-% Adiciona as pastas do projeto ao path, caso o usuario chame o orquestrador
-% diretamente sem ter rodado setup_paths antes.
-if exist('pso_rid', 'file') == 2 && exist('fem_nao_linear_solver', 'file') == 2
-    return;
-end
-raiz = fullfile(fileparts(mfilename('fullpath')), '..');
-addpath(raiz);
-setup_paths(false);
-end
+% garantir_caminhos e preparar_pool sao helpers compartilhados em
+% 03_orquestrador/auxiliares/ (ver garantir_caminhos.m e preparar_pool.m) —
+% nao ha mais funcao local aqui.

@@ -1,4 +1,13 @@
-function resultado = main_hadi_51barras(seed, n_runs, modo, com_flambagem)
+function resultado = main_hadi_51barras(seed, n_runs, modo, com_flambagem, n_workers)
+arguments
+    % seed aceita tambem char/string por causa das chamadas-sentinela
+    % main_hadi_51barras('caso') / ('auxiliares') — ver mais abaixo.
+    seed {mustBeA(seed, ["double","char","string"])} = 42
+    n_runs        (1,1) double {mustBePositive, mustBeInteger} = 5
+    modo          {mustBeMember(modo, {'linear', 'nao_linear'})} = 'nao_linear'
+    com_flambagem (1,1) logical = false
+    n_workers     (1,1) double {mustBeNonnegative, mustBeInteger} = 0
+end
 % MAIN_HADI_51BARRAS  Otimizacao da trelica de cobertura de 51 barras, [HA2003] Sec. 6.3.
 %
 % -------------------------------------------------------------------------
@@ -55,12 +64,21 @@ function resultado = main_hadi_51barras(seed, n_runs, modo, com_flambagem)
 %   main_hadi_51barras                          % Case 2, nao linear, 5 runs
 %   main_hadi_51barras(42, 5, 'linear')         % analise linear
 %   main_hadi_51barras(42, 5, 'nao_linear', true)   % Case 3 (com flambagem)
+%   main_hadi_51barras(42, 5, 'nao_linear', false, 3)  % ate 3 workers
 %   caso = main_hadi_51barras('caso');
+%
+% n_workers (padrao 0 = serial) paraleliza o laco multi-start via parfor.
+% Efeito colateral aceito: cada run passa a ter semente PROPRIA em vez de
+% todas consumirem o mesmo stream em sequencia — ver a nota completa em
+% main_hadi_nao_linear.m. preparar_pool.m aplica um teto por memoria
+% disponivel, nao por nucleos.
 %
 % SAIDA
 %   resultado : struct com .melhor_areas (4 grupos) .melhor_areas_barras (51)
 %               .melhor_volume .violacao .Sigma .u (por hipotese de carga)
 %               .historicos .pesos_por_run .caso .modo .com_flambagem
+%
+% See also pso_rid, fem_nao_linear_solver, fem_linear_solver, main_hadi_20barras
 
 % -------------------------------------------------------------------------
 % ACESSOR DO CASO
@@ -83,17 +101,8 @@ if nargin == 1 && ischar(seed) && strcmp(seed, 'auxiliares')
     return;
 end
 
-if nargin < 1 || isempty(seed),          seed          = 42;           end
-if nargin < 2 || isempty(n_runs),        n_runs        = 5;            end
-if nargin < 3 || isempty(modo),          modo          = 'nao_linear'; end
-if nargin < 4 || isempty(com_flambagem), com_flambagem = false;        end
-
-assert(any(strcmp(modo, {'linear', 'nao_linear'})), ...
-    'main_hadi_51barras:modoInvalido', ...
-    'modo deve ser ''linear'' ou ''nao_linear''. Recebido: ''%s''.', modo);
-
-garantir_caminhos();
-rng(seed);
+garantir_caminhos({'pso_rid', 'fem_nao_linear_solver'});
+n_workers = preparar_pool(n_workers, n_runs);
 
 caso = caso_hadi_51barras();
 
@@ -135,26 +144,39 @@ imprimir_cabecalho(caso, seed, n_runs, pso_params, modo, rotulo, ref_volume);
 % EXECUCAO MULTI-START
 % -------------------------------------------------------------------------
 
-historicos      = cell(n_runs, 1);
-volumes_por_run = nan(n_runs, 1);
-melhor_volume   = inf;
-melhor_areas    = [];
+historicos        = cell(n_runs, 1);
+volumes_por_run   = nan(n_runs, 1);
+areas_por_run     = cell(n_runs, 1);
+viaveis_por_run   = false(n_runs, 1);
+linhas_log        = cell(n_runs, 1);
 
-for r = 1:n_runs
-    fprintf('--- Executando Run %d/%d ---\n', r, n_runs);
+% Cada run e independente; parfor-safe (n_workers=0 -> serial, o padrao)
+% exige semente PROPRIA por run — mesma razao/solucao de pso_rid.m (Secao C)
+% e main_hadi_nao_linear.m.
+parfor (r = 1:n_runs, n_workers)
+    rng(seed + r - 1, 'twister');
 
     [areas_r, vol_r, hist_r, det_r] = pso_rid(funcao_objetivo, caso.config_vars, pso_params);
 
     historicos{r}      = hist_r;
     volumes_por_run(r) = vol_r;
+    areas_por_run{r}   = areas_r;
+    viaveis_por_run(r) = (det_r.gbest_viol <= 0);
 
-    if det_r.gbest_viol <= 0 && vol_r < melhor_volume
-        melhor_volume = vol_r;
-        melhor_areas  = areas_r;
+    linhas_log{r} = sprintf(['--- Run %d/%d ---\n    -> volume = %.0f mm3 | ' ...
+        'violacao = %.3e | iters = %d | avaliacoes = %d\n\n'], ...
+        r, n_runs, vol_r, det_r.gbest_viol, det_r.iter_executadas, det_r.n_avaliacoes);
+end
+
+fprintf('%s', linhas_log{:});
+
+melhor_volume = inf;
+melhor_areas  = [];
+for r = 1:n_runs
+    if viaveis_por_run(r) && volumes_por_run(r) < melhor_volume
+        melhor_volume = volumes_por_run(r);
+        melhor_areas  = areas_por_run{r};
     end
-
-    fprintf('    -> Run %d: volume = %.0f mm3 | violacao = %.3e | iters = %d | avaliacoes = %d\n\n', ...
-            r, vol_r, det_r.gbest_viol, det_r.iter_executadas, det_r.n_avaliacoes);
 end
 
 if isempty(melhor_areas)
@@ -793,11 +815,5 @@ end
 end
 
 
-function garantir_caminhos()
-if exist('pso_rid', 'file') == 2 && exist('fem_nao_linear_solver', 'file') == 2
-    return;
-end
-raiz = fullfile(fileparts(mfilename('fullpath')), '..');
-addpath(raiz);
-setup_paths(false);
-end
+% garantir_caminhos e preparar_pool sao helpers compartilhados em
+% 03_orquestrador/auxiliares/ — nao ha mais funcao local aqui.
