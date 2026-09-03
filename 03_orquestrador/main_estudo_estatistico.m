@@ -1,4 +1,4 @@
-function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_analise)
+function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_analise, n_workers)
 % MAIN_ESTUDO_ESTATISTICO  Comparacao multi-semente de configuracoes do PSO-RID.
 %
 % -------------------------------------------------------------------------
@@ -66,6 +66,16 @@ function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_ana
 %   n_sementes    : quantas execucoes por configuracao      (padrao 10)
 %   configuracoes : struct array com .nome e .params        (padrao: as 4 abaixo)
 %   tipo_analise  : 'nao_linear' (padrao) ou 'linear'
+%   n_workers     : quantos workers paralelos usar. Passe 0 para forcar
+%                   execucao SERIAL (parfor com limite zero roda no cliente,
+%                   sem abrir pool nenhum).
+%
+%                   O PADRAO E LIMITADO POR MEMORIA, nao por nucleos. Cada
+%                   worker e um processo MATLAB inteiro (~2 GB residentes),
+%                   entao um pool do tamanho de feature('numcores') esgota a
+%                   RAM de uma maquina comum e TRAVA o sistema — sobretudo
+%                   sem swap. resolver_workers() estima quantos processos
+%                   cabem na memoria disponivel e aplica um teto rigido.
 %
 % SAIDA
 %
@@ -73,6 +83,7 @@ function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_ana
 
 if nargin < 1 || isempty(n_sementes),   n_sementes   = 10;           end
 if nargin < 3 || isempty(tipo_analise), tipo_analise = 'nao_linear'; end
+if nargin < 4 || isempty(n_workers),    n_workers    = resolver_workers(); end
 
 garantir_caminhos();
 
@@ -141,50 +152,126 @@ imprimir_cabecalho(caso, configuracoes, sementes, orcamento_avaliacoes, tipo_ana
 % -------------------------------------------------------------------------
 
 n_cfg     = numel(configuracoes);
-pesos     = nan(n_cfg, n_sementes);
-viaveis   = false(n_cfg, n_sementes);
-avaliacoes= nan(n_cfg, n_sementes);
-tempos    = nan(n_cfg, n_sementes);
+n_tarefas = n_cfg * n_sementes;
 
+% -------------------------------------------------------------------------
+% PARALELIZACAO — os dois lacos sao achatados num so
+% -------------------------------------------------------------------------
+% Cada par (configuracao, semente) e uma tarefa INDEPENDENTE: nao ha estado
+% compartilhado entre elas (o contador de orcamento vive numa closure criada
+% dentro da propria tarefa). Achatar em vez de paralelizar so o laco interno
+% da balanceamento melhor, porque configuracoes diferentes custam tempos
+% diferentes e todas as tarefas entram na mesma fila.
+%
+% O PAREAMENTO SOBREVIVE. Ele depende de a configuracao c e a c' verem o
+% mesmo fluxo aleatorio na semente s — e isso vale porque cada tarefa chama
+% rng(sementes(s), 'twister') no seu inicio, o que fixa o estado do gerador
+% por completo. O resultado de uma tarefa nao depende de qual worker a
+% executou nem da ordem em que rodaram.
+%
+% O 'twister' e EXPLICITO de proposito: rng(s) sozinho mantem o gerador
+% corrente, que num worker nao e necessariamente o mesmo do cliente. Sem
+% fixar, o estudo poderia deixar de ser reproduzivel entre serial e paralelo.
+%
+% MEDIDO (2026-09-02, 4 sementes x 3 configuracoes, FEM linear, 2 workers):
+%
+%   serial ................................. 34,6 s
+%   paralelo, pool ja aberto ............... 19,9 s   -> 1,74x (eficiencia 87%)
+%   abertura do pool ....................... 14,7 s   (uma vez por sessao)
+%   custo de memoria ....................... 1,20 GB por worker
+%
+%   Equivalencia serial x paralelo: pesos, viabilidade e contagem de
+%   avaliacoes IDENTICOS (divergencia 0,000e+00) nas 3 configuracoes. E o
+%   que autoriza tratar o estudo paralelo como pareado.
+%
+% CONSEQUENCIA PRATICA: os 14,7 s de abertura do pool so se pagam a partir de
+% ~35 s de estudo serial. Estudos curtos (poucas sementes, FEM linear) ficam
+% MAIS LENTOS em paralelo — foi o caso da primeira medicao, que deu 1,01x
+% justamente por incluir a abertura. Para o estudo nao linear completo, que
+% leva horas, a abertura e irrelevante.
+
+[grade_c, grade_s] = ndgrid(1:n_cfg, 1:n_sementes);
+grade_c = grade_c(:);
+grade_s = grade_s(:);
+
+pesos_v      = nan(n_tarefas, 1);
+viaveis_v    = false(n_tarefas, 1);
+avaliacoes_v = nan(n_tarefas, 1);
+tempos_v     = nan(n_tarefas, 1);
+linhas_log   = cell(n_tarefas, 1);
+
+% Pre-indexa por TAREFA. Assim o parfor consegue FATIAR (cada worker recebe
+% so o seu elemento) em vez de BROADCAST (copiar o array inteiro para todos).
+sem_por_tarefa    = sementes(grade_s);
+params_por_tarefa = cell(n_tarefas, 1);
+for t = 1:n_tarefas
+    params = configuracoes(grade_c(t)).params;
+    % max_iter alto: a parada efetiva e o orcamento de avaliacoes,
+    % imposto pelo envoltorio contador dentro da tarefa.
+    params.max_iter = 100000;
+    params_por_tarefa{t} = params;
+end
+
+% Abre o pool com o tamanho PEDIDO. Sem isto, o segundo argumento do parfor
+% nao protegeria nada: ele limita quantos workers sao USADOS, mas se nenhum
+% pool existir o parfor abre um do tamanho do perfil padrao — que e o numero
+% de nucleos. Numa maquina de 16 nucleos isso sao 16 processos MATLAB de
+% ~2 GB cada. Abrir explicitamente e o que faz o limite valer para os
+% PROCESSOS, e nao so para as tarefas.
+n_workers = preparar_pool(n_workers, n_tarefas);
+
+fprintf('\n>>> Executando %d tarefas (%d configuracoes x %d sementes) em %s\n', ...
+        n_tarefas, n_cfg, n_sementes, ...
+        ternario(n_workers > 0, sprintf('%d workers', n_workers), 'modo serial'));
+
+parfor (t = 1:n_tarefas, n_workers)
+    params = params_por_tarefa{t};
+
+    rng(sem_por_tarefa(t), 'twister');
+
+    % Funcao objetivo com orcamento de avaliacoes do FEM. O contador e o
+    % melhor-ate-agora vivem numa closure (ver criar_funcao_com_orcamento).
+    [fobj, ler_melhor] = criar_funcao_com_orcamento( ...
+                             caso, tipo_analise, orcamento_avaliacoes);
+
+    t0 = tic;
+    try
+        % Caminho normal: o PSO termina por estagnacao ou max_iter antes
+        % de esgotar o orcamento.
+        [~, peso_s, ~, det_s] = pso_rid(fobj, caso.config_vars, params);
+        viol_s = det_s.gbest_viol;
+        [~, ~, ~, n_eval] = ler_melhor();
+    catch err
+        % Caminho esperado quando o orcamento acaba primeiro: recupera o
+        % melhor resultado registrado pela closure antes da interrupcao.
+        if ~strcmp(err.identifier, 'main_estudo_estatistico:orcamentoEsgotado')
+            rethrow(err);
+        end
+        [~, peso_s, viol_s, n_eval] = ler_melhor();
+    end
+
+    tempos_v(t)     = toc(t0);
+    pesos_v(t)      = peso_s;
+    viaveis_v(t)    = (viol_s <= 0);
+    avaliacoes_v(t) = n_eval;
+
+    % O log e MONTADO aqui e IMPRESSO depois, em ordem: fprintf dentro de
+    % parfor sai fora de ordem e intercalado entre workers.
+    linhas_log{t} = sprintf('    semente %2d: peso = %8.2f kg | viavel = %d | avaliacoes = %5d | %.0fs', ...
+                            sem_por_tarefa(t), peso_s, viol_s <= 0, n_eval, tempos_v(t));
+end
+
+% Desfaz o achatamento: coluna-major casa com o ndgrid acima.
+pesos      = reshape(pesos_v,      n_cfg, n_sementes);
+viaveis    = reshape(viaveis_v,    n_cfg, n_sementes);
+avaliacoes = reshape(avaliacoes_v, n_cfg, n_sementes);
+tempos     = reshape(tempos_v,     n_cfg, n_sementes);
+
+% Log em ordem deterministica, agrupado por configuracao.
 for c = 1:n_cfg
     fprintf('\n>>> Configuracao %d/%d — %s\n', c, n_cfg, configuracoes(c).nome);
-
     for s = 1:n_sementes
-        params = configuracoes(c).params;
-        % max_iter alto: a parada efetiva e o orcamento de avaliacoes,
-        % imposto pelo envoltorio contador abaixo.
-        params.max_iter = 100000;
-
-        rng(sementes(s));
-
-        % Funcao objetivo com orcamento de avaliacoes do FEM. O contador e o
-        % melhor-ate-agora vivem numa closure (ver criar_funcao_com_orcamento).
-        [fobj, ler_melhor] = criar_funcao_com_orcamento( ...
-                                 caso, tipo_analise, orcamento_avaliacoes);
-
-        t0 = tic;
-        try
-            % Caminho normal: o PSO termina por estagnacao ou max_iter antes
-            % de esgotar o orcamento.
-            [~, peso_s, ~, det_s] = pso_rid(fobj, caso.config_vars, params);
-            viol_s = det_s.gbest_viol;
-            [~, ~, ~, n_eval] = ler_melhor();
-        catch err
-            % Caminho esperado quando o orcamento acaba primeiro: recupera o
-            % melhor resultado registrado pela closure antes da interrupcao.
-            if ~strcmp(err.identifier, 'main_estudo_estatistico:orcamentoEsgotado')
-                rethrow(err);
-            end
-            [~, peso_s, viol_s, n_eval] = ler_melhor();
-        end
-        tempos(c,s) = toc(t0);
-
-        pesos(c,s)      = peso_s;
-        viaveis(c,s)    = (viol_s <= 0);
-        avaliacoes(c,s) = n_eval;
-
-        fprintf('    semente %2d: peso = %8.2f kg | viavel = %d | avaliacoes = %5d | %.0fs\n', ...
-                sementes(s), peso_s, viaveis(c,s), avaliacoes(c,s), tempos(c,s));
+        fprintf('%s\n', linhas_log{(s-1)*n_cfg + c});
     end
 end
 
@@ -497,6 +584,130 @@ fclose(fid);
 fprintf(' Log do estudo salvo em:\n   %s\n\n', nome);
 end
 
+
+function n = resolver_workers()
+% RESOLVER_WORKERS  Quantos workers usar por padrao, LIMITADO POR MEMORIA.
+%
+% Devolve 0 (execucao serial) quando nao ha Parallel Computing Toolbox, para
+% que o estudo continue rodando em qualquer instalacao.
+%
+% POR QUE NAO feature('numcores')
+%
+% Um worker do Parallel Computing Toolbox nao e uma thread: e um processo
+% MATLAB completo, com o seu proprio interpretador e a sua copia dos dados
+% fatiados. Em regime, cada um ocupa da ordem de 2 GB residentes. Numa
+% maquina de 16 nucleos e 13 GB de RAM, um pool "um worker por nucleo" pede
+% ~32 GB so de workers, alem da sessao cliente. Sem swap, o resultado nao e
+% lentidao: e o sistema inteiro travando.
+%
+% O numero de nucleos e, portanto, o limite ERRADO. O limite certo e quantos
+% processos cabem na memoria que sobra depois de reservar o que o sistema
+% operacional e a sessao cliente ja usam.
+
+n = 0;
+
+if isempty(ver('parallel')) || ~license('test', 'Distrib_Computing_Toolbox')
+    return;
+end
+
+% 1,20 GB/worker foi o MEDIDO aqui (pool de 2, FEM linear). O valor usado e
+% 2 GB de proposito: a folga cobre problemas maiores, e errar para cima aqui
+% custa alguns workers a menos, enquanto errar para baixo trava a maquina.
+RAM_POR_WORKER_GB = 2;    % consumo residente por worker, com folga
+RESERVA_GB        = 3;    % SO + sessao MATLAB cliente + folga
+TETO_WORKERS      = 6;    % teto rigido: acima disso o ganho nao paga o risco
+
+livre_gb = memoria_disponivel_gb();
+
+if isnan(livre_gb)
+    % Nao deu para medir a memoria. Escolhe o minimo util em vez do maximo
+    % possivel: 2 workers cabem em praticamente qualquer maquina que rode
+    % MATLAB, e o estudo continua CORRETO (so mais lento) se for pouco.
+    n = 2;
+else
+    n = floor(max(livre_gb - RESERVA_GB, 0) / RAM_POR_WORKER_GB);
+end
+
+n = min([n, max(feature('numcores') - 1, 1), TETO_WORKERS]);
+
+% Abaixo de 2 workers o paralelismo so custa: pagaria-se a abertura do pool
+% e a serializacao das tarefas para rodar praticamente em serie.
+if n < 2
+    n = 0;
+end
+end
+
+
+function gb = memoria_disponivel_gb()
+% MEMORIA_DISPONIVEL_GB  Memoria utilizavel agora, em GB. NaN se nao der para medir.
+%
+% MemAvailable do /proc/meminfo e a estimativa do proprio kernel de quanto
+% pode ser alocado sem entrar em swap — ja inclui o cache que ele devolveria
+% sob pressao. E a medida certa aqui; MemFree subestimaria muito.
+
+gb = NaN;
+
+try
+    if isunix && ~ismac
+        txt = fileread('/proc/meminfo');
+        tok = regexp(txt, 'MemAvailable:\s+(\d+)\s+kB', 'tokens', 'once');
+        if ~isempty(tok)
+            gb = str2double(tok{1}) / 1024 / 1024;
+        end
+    elseif ispc
+        [~, sys] = memory();
+        gb = sys.PhysicalMemory.Available / 1024^3;
+    end
+catch
+    gb = NaN;   % qualquer falha cai no caminho conservador de quem chamou
+end
+end
+
+
+function n = preparar_pool(n_pedido, n_tarefas)
+% PREPARAR_POOL  Garante um pool com no MAXIMO n_pedido workers.
+%
+% Devolve quantos workers usar de fato no parfor.
+%
+% Existe por um detalhe do parfor: o limite M em parfor(i=1:n, M) restringe
+% quantos workers sao USADOS, mas nao impede que o parfor ABRA um pool do
+% tamanho do perfil padrao quando nenhum esta aberto. Abrir aqui, com o
+% tamanho explicito, e o que impede o pool de estourar a memoria.
+
+if n_pedido <= 0
+    n = 0;
+    return;
+end
+
+% Mais workers do que tarefas so gasta memoria: os excedentes ficam ociosos.
+n = min(n_pedido, n_tarefas);
+
+pool = gcp('nocreate');
+
+if isempty(pool)
+    fprintf('    Abrindo pool com %d workers (~%d GB estimados)...\n', n, 2*n);
+    parpool('Processes', n);
+    return;
+end
+
+% Ja havia um pool: reaproveita, sem derrubar nem redimensionar — isso mataria
+% um pool que o usuario possa estar usando para outra coisa. Se ele for maior
+% do que o pedido, o limite do parfor ainda segura quantas TAREFAS rodam ao
+% mesmo tempo; os processos, porem, ja estao de pe.
+if pool.NumWorkers > n
+    fprintf(['    Pool existente tem %d workers (pedido: %d). ' ...
+             'Reaproveitando; o parfor usa no maximo %d.\n'], ...
+            pool.NumWorkers, n, n);
+else
+    n = pool.NumWorkers;
+    fprintf('    Reaproveitando pool existente com %d workers.\n', n);
+end
+end
+
+
+function s = ternario(cond, a, b)
+if cond, s = a; else, s = b; end
+end
 
 function garantir_caminhos()
 if exist('pso_rid', 'file') == 2 && exist('fem_nao_linear_solver', 'file') == 2

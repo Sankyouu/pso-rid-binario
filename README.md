@@ -40,7 +40,11 @@ CPIO III/
 ├── 03_orquestrador/             ◄── BLOCO 3: experimentos + definição dos casos
 │   ├── main_hadi_nao_linear.m       benchmark principal + DEFINE o caso Hadi
 │   ├── main_hadi_linear.m           contraparte linear (comparação)
+│   ├── main_hadi_20barras.m         treliça 20 barras + DEFINE o caso de 20 barras
+│   ├── main_hadi_51barras.m         treliça cobertura 51 barras + DEFINE o caso
 │   ├── main_awruch_discreto.m       catálogos por barra + DEFINE o caso Awruch
+│   ├── main_datta_engrenagens.m     trem de engrenagens [DF2011] (não usa FEM)
+│   ├── main_datta_mola.m            mola de compressão [DF2011] (usa R, I e D)
 │   ├── main_estudo_estatistico.m    comparação multi-semente de configurações
 │   └── auxiliares/                  só blocos longos de impressão/gráfico
 │       ├── relatorio_comparativo.m
@@ -64,7 +68,11 @@ que devolve só o struct do problema, sem rodar otimização:
 | Caso | Definido em | Acessor |
 |---|---|---|
 | Hadi 10 barras `[HA2003]` | `main_hadi_nao_linear.m` | `main_hadi_nao_linear('caso')` |
+| Hadi 20 barras `[HA2003]` Sec. 2.2 | `main_hadi_20barras.m` | `main_hadi_20barras('caso')` |
+| Hadi 51 barras `[HA2003]` Sec. 6.3 | `main_hadi_51barras.m` | `main_hadi_51barras('caso')` |
 | Awruch (catálogos por barra) | `main_awruch_discreto.m` | `main_awruch_discreto('caso')` |
+| Engrenagens `[DF2011]` Sec. 5.1 | `main_datta_engrenagens.m` | `main_datta_engrenagens('caso')` |
+| Mola de compressão `[DF2011]` Sec. 5.2 | `main_datta_mola.m` | `main_datta_mola('caso')` |
 | Treliça rasa (oráculo analítico) | `06_testes/problema_trelica_rasa_2barras.m` | chamada direta |
 
 **O caso Hadi tem fonte única.** Ele é usado por três orquestradores
@@ -108,7 +116,13 @@ setup_paths                  % configura os caminhos
 
 main_hadi_nao_linear         % benchmark principal (não linear)
 main_hadi_linear             % contraparte linear
+main_hadi_20barras           % treliça 20 barras, 10 grupos (não linear)
+main_hadi_20barras(42,5,'linear')  % mesma treliça, análise linear
+main_hadi_51barras           % treliça de cobertura, 4 grupos, 2 hipóteses de carga
+main_hadi_51barras(42,5,'nao_linear',true)  % Case 3, com flambagem
 main_awruch_discreto         % catálogos independentes por barra
+main_datta_engrenagens       % trem de engrenagens, 4 variáveis INTEIRAS
+main_datta_mola              % mola: única com variável REAL + INTEIRA + DISCRETA
 main_estudo_estatistico(5)   % comparação multi-semente (5 sementes)
 ```
 

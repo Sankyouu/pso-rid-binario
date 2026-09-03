@@ -476,9 +476,44 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
         % 7. EQUIVALENCIA COM O SOLVER ORIGINAL (arquivado em 05_legado)
         % -----------------------------------------------------------------
         function testSolverOriginalProduzResultadoIdentico(tc)
-            % O solver ORIGINAL (pre-Bloco 2), arquivado em 05_legado/,
-            % deve devolver exatamente o mesmo que o solver generico,
-            % garantindo que a migracao nao alterou nenhum resultado.
+            % O solver ORIGINAL (pre-Bloco 2), arquivado em 05_legado/, deve
+            % devolver o mesmo que o solver generico, garantindo que a
+            % migracao nao alterou nenhum resultado.
+            %
+            % -------------------------------------------------------------
+            % POR QUE A TOLERANCIA DEIXOU DE SER ZERO  (2026-09-02)
+            % -------------------------------------------------------------
+            % Ate a vetorizacao de fem_nao_linear_solver este teste exigia
+            % igualdade BIT A BIT ('AbsTol', 0), e passava.
+            %
+            % A vetorizacao trocou a acumulacao elemento a elemento
+            %     KT(idx,idx) = KT(idx,idx) + ke + kg
+            % por um accumarray sobre indices lineares pre-computados. O
+            % resultado e algebricamente identico, mas a ORDEM DAS SOMAS muda,
+            % e ordem de soma em ponto flutuante muda o ultimo bit. Nao ha
+            % como vetorizar preservando bit-exatidao.
+            %
+            % Divergencia medida nos seis casos de estudo do projeto (Hadi 10
+            % com areas de referencia e uniformes, 20 barras, 51 barras nas
+            % duas hipoteses de carga, e Awruch):
+            %
+            %     peso        : 0            (soma direta, nao reordenada)
+            %     tensoes     : <= 1.1e-11   relativo
+            %     deslocamentos: <= 1.1e-13  relativo
+            %
+            % Para dimensionar: as tensoes sao da ordem de 1e2 MPa contra um
+            % admissivel de 172.25 MPa, entao 1e-11 relativo esta uns dez
+            % ordens de grandeza abaixo de qualquer significado fisico ou de
+            % qualquer decisao do otimizador.
+            %
+            % A tolerancia adotada (RelTol 1e-9) e folgada o bastante para nao
+            % quebrar com reordenacoes legitimas e apertada o bastante para
+            % pegar erro de verdade: um bug de montagem ou de indice produz
+            % divergencia de ordem 1e0, nao 1e-11.
+            %
+            % O PESO continua exigido EXATO: nao passa por acumulacao
+            % reordenada, entao qualquer divergencia ali seria defeito real.
+            % -------------------------------------------------------------
             caso  = main_hadi_nao_linear('caso');
             areas = caso.ref_areas;
 
@@ -486,8 +521,8 @@ classdef TestFemNaoLinear < matlab.unittest.TestCase
             [w2, S2, u2] = fem_nao_linear_solver(caso, areas);
 
             tc.verifyEqual(w1, w2, 'AbsTol', 0, 'Peso divergiu do solver original.');
-            tc.verifyEqual(S1, S2, 'AbsTol', 0, 'Tensoes divergiram do solver original.');
-            tc.verifyEqual(u1, u2, 'AbsTol', 0, 'Deslocamentos divergiram do solver original.');
+            tc.verifyEqual(S1, S2, 'RelTol', 1e-9, 'Tensoes divergiram do solver original.');
+            tc.verifyEqual(u1, u2, 'RelTol', 1e-9, 'Deslocamentos divergiram do solver original.');
         end
     end
 

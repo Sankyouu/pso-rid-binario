@@ -120,21 +120,44 @@ n_inc    = get_opcao(opcoes, 'n_inc',      10);
 max_iter = get_opcao(opcoes, 'max_iter',   50);
 tol      = get_opcao(opcoes, 'tol',      1e-6);
 
-dofs_livres = setdiff(1:s_dof, apoios);
+% Mascara logica em vez de setdiff: mesmo conjunto, sem ordenar nem testar
+% unicidade. setdiff custava 2% do tempo do solver (profile de 2026-09-02),
+% por ser chamado uma vez a cada avaliacao da funcao objetivo.
+mask_livres         = true(1, s_dof);
+mask_livres(apoios) = false;
+dofs_livres         = find(mask_livres);
 
 % -------------------------------------------------------------------------
 % 1. COMPRIMENTOS INICIAIS (L0)
 % -------------------------------------------------------------------------
 
-L0 = zeros(n_el, 1);
-for n = 1:n_el
-    ni = elements(1,n);  nj = elements(2,n);
-    dx = nodes0(1,nj) - nodes0(1,ni);
-    dy = nodes0(2,nj) - nodes0(2,ni);
-    L0(n) = sqrt(dx^2 + dy^2);
-end
+no_i = elements(1,:);
+no_j = elements(2,:);
+L0   = hypot(nodes0(1,no_j) - nodes0(1,no_i), ...
+             nodes0(2,no_j) - nodes0(2,no_i)).';
+
+L0r       = L0.';            % versoes LINHA, usadas nas contas vetorizadas
+areas_lin = areas(:).';
 assert(all(L0 > 0), 'fem_nao_linear_solver:barraDegenerada', ...
     'Ha barra(s) com comprimento inicial nulo.');
+
+% -------------------------------------------------------------------------
+% 1b. MAPAS DE INDICE — pre-computados uma unica vez
+% -------------------------------------------------------------------------
+% A topologia da trelica nao muda durante a analise, entao os indices de
+% montagem sao constantes. Pre-computa-los tira toda a indexacao de dentro do
+% laco de Newton-Raphson, que e onde estava quase metade do custo do solver.
+%
+%   edof_lin : GDLs de cada elemento, empilhados (4*n_el x 1)
+%   linKT    : indices LINEARES das 16 posicoes da 4x4 de cada elemento
+%              dentro de KT, em ordem column-major (a linha varia mais rapido)
+
+edof     = [2*no_i-1; 2*no_i; 2*no_j-1; 2*no_j];   % 4 x n_el
+edof_lin = edof(:);
+
+lin_i = repmat(edof, 4, 1);        % indice de LINHA  das 16 posicoes
+lin_j = kron(edof, ones(4,1));     % indice de COLUNA das 16 posicoes
+linKT = lin_i(:) + (lin_j(:) - 1) * s_dof;
 
 % -------------------------------------------------------------------------
 % 2. INICIALIZACAO
@@ -169,74 +192,63 @@ for inc = 1:n_inc
         %    axiais correntes (P_axial).
         % -----------------------------------------------------------------
 
-        KT = zeros(s_dof, s_dof);
+        % Geometria corrente de TODOS os elementos, de uma vez.
+        dx  = nodes_cur(1,no_j) - nodes_cur(1,no_i);
+        dy  = nodes_cur(2,no_j) - nodes_cur(2,no_i);
+        Ln  = hypot(dx, dy);
+        lam = dx ./ Ln;              % [HA2003] Eq. (14): lambda = cos(phi)
+        mu  = dy ./ Ln;              %                    mu     = sin(phi)
 
-        for n = 1:n_el
-            ni = elements(1,n);
-            nj = elements(2,n);
+        ll = lam .* lam;
+        lm = lam .* mu;
+        mm = mu  .* mu;
 
-            dx = nodes_cur(1,nj) - nodes_cur(1,ni);
-            dy = nodes_cur(2,nj) - nodes_cur(2,ni);
-            Ln = sqrt(dx^2 + dy^2);
+        ea = (areas_lin * E) ./ Ln;  % coeficiente de [KE]
+        pl = P_axial.'     ./ Ln;    % coeficiente de [KG]
 
-            % Cossenos diretores na configuracao corrente
-            % [HA2003] Eq. (14): lambda = cos(phi), mu = sin(phi)
+        % Somando [KE] e [KG] ANALITICAMENTE, a 4x4 do elemento (Eq. 13 com
+        % Eq. 14) tem apenas tres valores distintos:
+        %
+        %     [  A   B  -A  -B ]      A = ea*lam^2 + pl*mu^2
+        %     [  B   C  -B  -C ]      B = (ea - pl)*lam*mu
+        %     [ -A  -B   A   B ]      C = ea*mu^2  + pl*lam^2
+        %     [ -B  -C   B   C ]
+        %
+        % Assim nao e preciso montar e somar duas matrizes 4x4 por elemento a
+        % cada iteracao de Newton-Raphson.
 
-            lam = dx / Ln;
-            mu  = dy / Ln;
+        A = ea.*ll + pl.*mm;
+        B = (ea - pl) .* lm;
+        C = ea.*mm + pl.*ll;
 
-            % --- [KE] rigidez elastica (mesma forma da analise linear,
-            %     porem com a geometria corrente) ---
+        % As 16 posicoes da 4x4 em ordem column-major, uma coluna por
+        % elemento, acumuladas em KT pelos indices lineares pre-computados.
+        Z = [ A;  B; -A; -B; ...
+              B;  C; -B; -C; ...
+             -A; -B;  A;  B; ...
+             -B; -C;  B;  C];
 
-            ke = (areas(n) * E / Ln) * ...
-                [  lam*lam   lam*mu  -lam*lam  -lam*mu ;
-                   lam*mu    mu*mu   -lam*mu   -mu*mu  ;
-                  -lam*lam  -lam*mu   lam*lam   lam*mu ;
-                  -lam*mu   -mu*mu    lam*mu    mu*mu  ];
+        KT = reshape(accumarray(linKT, Z(:), [s_dof*s_dof, 1]), s_dof, s_dof);
 
-            % --- [KG] rigidez geometrica ---
-            % Eq. (14) [HA2003]:
-            %   KG = (P/L) * [  mu^2   -lam*mu  -mu^2    lam*mu ;
-            %                  -lam*mu  lam^2    lam*mu -lam^2  ;
-            %                  -mu^2    lam*mu   mu^2   -lam*mu ;
-            %                   lam*mu -lam^2   -lam*mu  lam^2  ]
-            % onde P e a carga axial intermediaria do elemento no estagio
-            % de carregamento corrente e L o comprimento do elemento.
+        % --- Condicoes de contorno e passo de Newton-Raphson
+        %     Eq. (18) [HA2003]:  [Kt]_i {du} = {R}_i
+        %
+        %     Resolve-se apenas no bloco LIVRE. E ALGEBRICAMENTE IDENTICO ao
+        %     que a versao anterior fazia (copiar KT, zerar linha e coluna de
+        %     cada apoio, por 1 na diagonal e zerar o residuo): zerar a coluna
+        %     do apoio o desacopla das equacoes livres, que ficam
+        %         KT(livres,livres) * du(livres) = R(livres),
+        %     e a linha com 1 na diagonal forca du(apoio) = 0.
+        %     A diferenca e de custo: nao copia KT, nao varre os apoios e
+        %     fatora um sistema menor.
 
-            Pn = P_axial(n);
-            kg = (Pn / Ln) * ...
-                [  mu*mu   -lam*mu  -mu*mu    lam*mu ;
-                  -lam*mu   lam*lam  lam*mu  -lam*lam;
-                  -mu*mu    lam*mu   mu*mu   -lam*mu ;
-                   lam*mu  -lam*lam -lam*mu   lam*lam];
-
-            idx = [2*ni-1, 2*ni, 2*nj-1, 2*nj];
-            KT(idx, idx) = KT(idx, idx) + ke + kg;   % Eq. (13)
-        end
-
-        % --- Condicoes de contorno: zera linha/coluna e poe 1 na diagonal
-
-        KT_bc = KT;
-        R_bc  = R;
-        for dof = apoios
-            KT_bc(dof, :)   = 0;
-            KT_bc(:, dof)   = 0;
-            KT_bc(dof, dof) = 1.0;
-            R_bc(dof)       = 0.0;
-        end
-
-        % --- Passo de Newton-Raphson: Eq. (18) [HA2003]
-        %     [Kt]_i {du} = {R}_i
-
-        du = KT_bc \ R_bc;
+        du = zeros(s_dof, 1);
+        du(dofs_livres) = KT(dofs_livres, dofs_livres) \ R(dofs_livres);
         u  = u + du;
 
         % --- Atualizacao da configuracao corrente
 
-        for nd = 1:n_nodes
-            nodes_cur(1,nd) = nodes0(1,nd) + u(2*nd-1);
-            nodes_cur(2,nd) = nodes0(2,nd) + u(2*nd);
-        end
+        nodes_cur = nodes0 + reshape(u, 2, n_nodes);
 
         % --- Atualizacao das forcas axiais
         %     Medida de deformacao: DEFORMACAO DE ENGENHARIA
@@ -250,37 +262,27 @@ for inc = 1:n_inc
         %     com deformacao de Green, que NAO coincide com a de engenharia
         %     fora do regime de deformacoes infinitesimais.
 
-        for n = 1:n_el
-            ni = elements(1,n);
-            nj = elements(2,n);
-            dxc = nodes_cur(1,nj) - nodes_cur(1,ni);
-            dyc = nodes_cur(2,nj) - nodes_cur(2,ni);
-            L_cor = sqrt(dxc^2 + dyc^2);
+        dxc   = nodes_cur(1,no_j) - nodes_cur(1,no_i);
+        dyc   = nodes_cur(2,no_j) - nodes_cur(2,no_i);
+        L_cor = hypot(dxc, dyc);
 
-            eps_n      = (L_cor - L0(n)) / L0(n);
-            P_axial(n) = areas(n) * E * eps_n;
-        end
+        P_axial = (areas_lin * E .* (L_cor - L0r) ./ L0r).';
 
         % --- Forcas internas na configuracao corrente
+        %     Equilibrio do elemento: q = P * [-lam; -mu; +lam; +mu]
+        %
+        %     Reaproveita dxc/dyc/L_cor calculados logo acima: antes a mesma
+        %     geometria era recalculada num segundo laco sobre elementos.
 
         F_ext_acc = inc * dF;
-        F_int     = zeros(s_dof, 1);
 
-        for n = 1:n_el
-            ni = elements(1,n);
-            nj = elements(2,n);
-            dxc = nodes_cur(1,nj) - nodes_cur(1,ni);
-            dyc = nodes_cur(2,nj) - nodes_cur(2,ni);
-            Ln  = sqrt(dxc^2 + dyc^2);
-            lam = dxc / Ln;
-            mu  = dyc / Ln;
+        lamc = dxc ./ L_cor;
+        muc  = dyc ./ L_cor;
+        Pl   = P_axial.';
 
-            % Equilibrio do elemento: q = P * [-lam; -mu; +lam; +mu]
+        Vf = [-Pl.*lamc; -Pl.*muc; Pl.*lamc; Pl.*muc];
 
-            idx   = [2*ni-1, 2*ni, 2*nj-1, 2*nj];
-            felem = P_axial(n) * [-lam; -mu; lam; mu];
-            F_int(idx) = F_int(idx) + felem;
-        end
+        F_int = accumarray(edof_lin, Vf(:), [s_dof, 1]);
 
         % --- Residuo e criterio de convergencia
 

@@ -20,6 +20,8 @@ function setup_paths(verbose)
 %
 %       Casos de estudo (acessores, sem rodar otimizacao):
 %           caso = main_hadi_nao_linear('caso')   benchmark [HA2003]
+%           caso = main_hadi_20barras('caso')     trelica 20 barras [HA2003]
+%           caso = main_hadi_51barras('caso')     trelica cobertura 51 barras
 %           caso = main_awruch_discreto('caso')   catalogos por barra
 %
 %   Testes ..................... 06_testes/  (matlab.unittest — exige MATLAB)
@@ -59,7 +61,11 @@ if verbose
     fprintf('\nExperimentos disponiveis em 03_orquestrador/:\n');
     fprintf('  main_hadi_nao_linear      Benchmark Hadi 2003, analise nao linear\n');
     fprintf('  main_hadi_linear          Benchmark Hadi 2003, analise linear\n');
+    fprintf('  main_hadi_20barras        Trelica 20 barras [HA2003] Sec. 2.2 (10 grupos)\n');
+    fprintf('  main_hadi_51barras        Trelica cobertura 51 barras [HA2003] Sec. 6.3\n');
     fprintf('  main_awruch_discreto      Catalogos independentes por barra\n');
+    fprintf('  main_datta_engrenagens    Trem de engrenagens [DF2011] Sec. 5.1 (sem FEM)\n');
+    fprintf('  main_datta_mola           Mola de compressao [DF2011] Sec. 5.2 (R+I+D)\n');
     fprintf('  main_estudo_estatistico   Comparacao multi-semente de configuracoes\n');
     fprintf('\nTestes: matlab -batch "cd(''06_testes''); run_todos_testes"\n');
 end
