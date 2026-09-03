@@ -79,6 +79,16 @@ if nargin == 1 && ischar(seed) && strcmp(seed, 'caso')
     return;
 end
 
+% Acesso as funcoes locais para teste, no mesmo padrao de pso_rid('auxiliares').
+% Existe para que 06_testes/ possa verificar a reproducao dos valores
+% publicados sem reimplementar a funcao objetivo aqui.
+if nargin == 1 && ischar(seed) && strcmp(seed, 'auxiliares')
+    resultado = struct( ...
+        'expandir_areas',  @expandir_areas,  ...
+        'avaliar_projeto', @avaliar_projeto);
+    return;
+end
+
 if nargin < 1 || isempty(seed),   seed   = 42;            end
 if nargin < 2 || isempty(n_runs), n_runs = 5;             end
 if nargin < 3 || isempty(modo),   modo   = 'nao_linear';  end

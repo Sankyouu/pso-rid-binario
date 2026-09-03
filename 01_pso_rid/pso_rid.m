@@ -84,6 +84,7 @@ function [best_sol, best_cost, cost_history, details] = pso_rid(funcao_custo, co
 %   aux.velocidade_binaria  -> velocidade_binaria
 %   aux.mutacao_polinomial  -> mutacao_polinomial
 %   aux.domina_deb          -> domina_deb
+%   aux.progresso_deb       -> progresso_deb
 %
 % -------------------------------------------------------------------------
 % >>> ACESSO AOS AUXILIARES (teste)
@@ -95,7 +96,8 @@ if nargin == 1 && ischar(funcao_custo) && strcmp(funcao_custo, 'auxiliares')
         'decodificar',        @decodificar,        ...
         'velocidade_binaria', @velocidade_binaria, ...
         'mutacao_polinomial', @mutacao_polinomial, ...
-        'domina_deb',         @domina_deb);
+        'domina_deb',         @domina_deb,         ...
+        'progresso_deb',      @progresso_deb);
     best_cost    = [];
     cost_history = [];
     details      = struct();
@@ -272,6 +274,7 @@ cost_history     = nan(max_iter, 1);
 viol_history     = nan(max_iter, 1);
 iter_sem_melhora = 0;
 melhor_custo_ant = inf;
+melhor_viol_ant  = inf;   % ver [D9]: o progresso e medido tambem pela violacao
 iter_final       = max_iter;
 n_avaliacoes     = 0;
 n_overflow       = 0;
@@ -394,9 +397,13 @@ for iter = 1:max_iter
 
     % --- Controle de estagnacao ([DF2011] Sec. 5: "a run is terminated in
     %     between when no improvement in the best objective value is noticed")
+    %
+    % O que conta como "melhora" segue a regra de [DEB2000], e nao so o
+    % custo, com limiar RELATIVO. Ver [D9] no rodape.
 
-    if gbest_custo < melhor_custo_ant - 1e-12
+    if progresso_deb(gbest_custo, gbest_viol, melhor_custo_ant, melhor_viol_ant)
         melhor_custo_ant = gbest_custo;
+        melhor_viol_ant  = gbest_viol;
         iter_sem_melhora = 0;
     else
         iter_sem_melhora = iter_sem_melhora + 1;
@@ -980,6 +987,101 @@ elseif novo_viavel && ref_viavel
 else
     % Criterio 3: ambos inviaveis -> menor violacao vence
     melhor = (viol_novo < viol_ref);
+end
+
+end
+
+
+% -------------------------------------------------------------------------
+% >>> progresso_deb — [D9]
+% -------------------------------------------------------------------------
+
+function houve = progresso_deb(custo_novo, viol_novo, custo_ref, viol_ref)
+% PROGRESSO_DEB  O g-best avancou o suficiente para zerar o contador de estagnacao?
+%
+% Duas perguntas separadas:
+%
+%   DIRECAO   : o novo g-best e preferivel ao anterior? Responde domina_deb,
+%               a mesma regra de [DEB2000] usada no resto do algoritmo.
+%   MAGNITUDE : a melhora e grande o bastante para nao ser ruido numerico?
+%               Responde um limiar RELATIVO a escala da grandeza que mudou.
+%
+% -------------------------------------------------------------------------
+% [D9] CRITERIO DE ESTAGNACAO  — decisao registrada em 2026-09-02
+% -------------------------------------------------------------------------
+%
+% A versao anterior usava:
+%
+%     if gbest_custo < melhor_custo_ant - 1e-12
+%
+% Dois defeitos, independentes um do outro.
+%
+% 1. IGNORAVA A VIOLACAO. Enquanto o enxame ainda esta todo inviavel, o
+%    g-best e escolhido pelo criterio 3 de [DEB2000] — so pela violacao — e
+%    o custo associado a ele pode ate SUBIR de uma iteracao para a outra.
+%    Pela regra antiga, uma corrida que reduzia a violacao a cada iteracao,
+%    isto e, que progredia exatamente como [DEB2000] manda, contava como
+%    estagnada e podia ser abortada antes de encontrar a regiao viavel.
+%    O criterio de parada usava uma nocao de progresso DIFERENTE da que o
+%    algoritmo usa para escolher o g-best. Agora usa a mesma.
+%
+% 2. O LIMIAR ERA ABSOLUTO. 1e-12 kg e desprezivel para uma trelica de
+%    ~6000 kg, mas o problema do trem de engrenagens ([DF2011] Sec. 5.1)
+%    tem f* = 2,7e-12 — o limiar e da ordem do proprio otimo. Ali, nenhuma
+%    melhora jamais superava o limiar depois das primeiras iteracoes, e a
+%    parada por estagnacao disparava essencialmente sempre. O limiar agora
+%    e relativo a escala da grandeza comparada, o que o torna adimensional
+%    e valido para qualquer problema.
+%
+% EFEITO MEDIDO (2026-09-02). Nenhum, nas tres familias testadas:
+%
+%   engrenagens, 100 execucoes ...... resultado BIT A BIT identico ao antigo
+%   trelica linear, 6 sementes x 3 configs ... identico (divergencia 0)
+%   mola, 200 sementes pareadas ..... 6/200 antigo contra 12/200 com [D9];
+%                                     McNemar exato p = 0,238. Wilcoxon
+%                                     sobre f: p = 0,423. Custo: +4,6% de
+%                                     avaliacoes (38975 -> 40781).
+%
+% Nas engrenagens e na trelica linear os dois criterios concordam em toda
+% iteracao — no primeiro porque a violacao e identicamente nula e o objetivo
+% assume valores discretos bem separados; na segunda porque o enxame acha a
+% regiao viavel cedo. So a mola exercita o caminho novo, e ali a diferenca
+% nao se separa do ruido.
+%
+% ENTAO POR QUE MANTER. Porque a razao e de correcao, nao de desempenho: o
+% criterio de parada passou a usar a MESMA nocao de progresso que o resto do
+% algoritmo, e o limiar passou a ser adimensional. A hipotese de que o
+% defeito 2 explicava a lacuna de reprodutibilidade das engrenagens (1% aqui
+% contra 100% em [DF2011]) foi TESTADA E REJEITADA: a taxa nao mudou.
+
+TOL_REL = 1e-9;   % melhora relativa minima para contar como progresso
+
+if ~domina_deb(custo_novo, viol_novo, custo_ref, viol_ref)
+    houve = false;
+    return;
+end
+
+% Primeira iteracao: a referencia ainda e inf. Qualquer valor finito e progresso.
+if ~isfinite(custo_ref) || ~isfinite(viol_ref)
+    houve = true;
+    return;
+end
+
+novo_viavel = (viol_novo <= 0);
+ref_viavel  = (viol_ref  <= 0);
+
+if novo_viavel ~= ref_viavel
+    % Criterio 1: o enxame acabou de encontrar a regiao viavel. E a mudanca
+    % qualitativa mais importante que existe aqui; nao passa por limiar.
+    houve = true;
+
+elseif novo_viavel
+    % Criterio 2: ambos viaveis -> queda relativa no CUSTO
+    houve = (custo_ref - custo_novo) > TOL_REL * max(abs(custo_ref), abs(custo_novo));
+
+else
+    % Criterio 3: ambos inviaveis -> queda relativa na VIOLACAO
+    houve = (viol_ref - viol_novo) > TOL_REL * max(abs(viol_ref), abs(viol_novo));
 end
 
 end

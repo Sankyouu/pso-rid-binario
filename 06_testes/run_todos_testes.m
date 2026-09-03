@@ -25,6 +25,8 @@ function resultados = run_todos_testes()
 %       TestFemNaoLinear        validacao analitica exata, K_T = K_E + K_G
 %   Bloco 1+2+3
 %       TestIntegracao          interfaces entre blocos, ciclo completo
+%       TestOrquestradoresNovos reproducao dos valores publicados nos 4
+%                               casos novos (20 e 51 barras, engrenagens, mola)
 %
 % NOTA: os casos de estudo nao sao arquivos proprios — vivem como funcao
 % local no respectivo orquestrador e sao obtidos por acessor

@@ -1,5 +1,8 @@
-function str = relatorio_comparativo(nome_caso, best_sol, best_peso, ref_sol, ref_peso, Sigma, sigma_max, u_livre, d_max, viol)
-% RELATORIO_COMPARATIVO Gera relatório estruturado de resultados em texto
+function relatorio_comparativo(nome_caso, best_sol, best_peso, ref_sol, ref_peso, Sigma, sigma_max, u_livre, d_max, viol)
+% RELATORIO_COMPARATIVO Imprime o relatorio estruturado de resultados.
+%
+% Nao devolve nada: a saida declarada antes ('str') nunca era atribuida, e
+% nenhum dos chamadores a capturava.
 
 if nargin < 10, viol = 0; end
 

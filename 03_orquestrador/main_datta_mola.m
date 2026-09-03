@@ -113,6 +113,16 @@ if nargin == 1 && ischar(seed) && strcmp(seed, 'caso')
     return;
 end
 
+% Acesso as funcoes locais para teste, no mesmo padrao de pso_rid('auxiliares').
+% Existe para que 06_testes/ possa verificar a reproducao dos valores
+% publicados sem reimplementar a funcao objetivo aqui.
+if nargin == 1 && ischar(seed) && strcmp(seed, 'auxiliares')
+    resultado = struct( ...
+        'avaliar_projeto', @avaliar_projeto,  ...
+        'restricoes',      @restricoes);
+    return;
+end
+
 if nargin < 1 || isempty(seed),   seed   = 42; end
 if nargin < 2 || isempty(n_runs), n_runs = 30; end   % [DF2011]: 30 execucoes
 
@@ -350,6 +360,12 @@ caso.ref_d = 0.283;
 caso.ref_f = 2.658559;
 caso.ref_faixa_D = [1.223041, 1.223060];
 caso.ref_faixa_f = [2.658559, 2.658599];
+
+% O D publicado esta 3.7e-08 FORA da regiao viavel (bissecao de 2026-09-02:
+% a fronteira, com g8 ativa, fica em D* = 1.223041037). Nao e erro de
+% modelagem, e o arredondamento das 6 casas decimais publicadas: qualquer D
+% a partir de 1.223050 ja e estritamente viavel. Travado em
+% 06_testes/TestOrquestradoresNovos.m.
 
 % -------------------------------------------------------------------------
 % ESTRUTURA DO ESPACO DE BUSCA (enumeracao de 2026-09-02)

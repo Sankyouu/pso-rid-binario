@@ -559,7 +559,7 @@ pasta = fullfile(fileparts(mfilename('fullpath')), '..', '04_resultados', 'logs'
 if ~exist(pasta, 'dir'); mkdir(pasta); end
 
 nome = fullfile(pasta, sprintf('estudo_estatistico_%s_%s.txt', ...
-                               tipo, datestr(now, 'yyyymmdd_HHMMSS')));
+                               tipo, char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'))));
 
 fid = fopen(nome, 'w');
 if fid < 0
@@ -569,7 +569,7 @@ if fid < 0
 end
 
 fprintf(fid, 'ESTUDO ESTATISTICO PSO-RID\n');
-fprintf(fid, 'Data: %s\n', datestr(now));
+fprintf(fid, 'Data: %s\n', char(datetime('now')));
 fprintf(fid, 'Analise: %s | Sementes: %s | Orcamento: %d avaliacoes\n\n', ...
         tipo, mat2str(sementes), orcamento);
 
