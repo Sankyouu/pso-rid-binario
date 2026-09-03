@@ -34,13 +34,8 @@ function resultado = main_hadi_51barras(seed, n_runs, modo, com_flambagem)
 %
 %   4. Apenas 4 variaveis de projeto para 51 barras (contra 10 para 20).
 %
-% -------------------------------------------------------------------------
-% ESTE ARQUIVO E A FONTE UNICA DO CASO DE 51 BARRAS
-% -------------------------------------------------------------------------
-%
-%   caso = main_hadi_51barras('caso');
-%
-% Mesmo padrao dos demais orquestradores.
+% FONTE UNICA DO CASO: exposto por main_hadi_51barras('caso'), mesmo padrao
+% dos demais orquestradores.
 %
 % -------------------------------------------------------------------------
 % REFERENCIAS

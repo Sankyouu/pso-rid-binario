@@ -1,7 +1,6 @@
 function resultado = main_hadi_nao_linear(seed, n_runs)
 % MAIN_HADI_NAO_LINEAR  Otimizacao da trelica de 10 barras com analise NAO LINEAR.
 %
-%
 % -------------------------------------------------------------------------
 % O QUE ESTE ARQUIVO FAZ
 % -------------------------------------------------------------------------
@@ -21,19 +20,11 @@ function resultado = main_hadi_nao_linear(seed, n_runs)
 %   03_orquestrador/auxiliares/plot_convergencia.m
 %   03_orquestrador/auxiliares/salvar_figura.m
 %
-% -------------------------------------------------------------------------
-% ESTE ARQUIVO E A FONTE UNICA DO CASO HADI
-% -------------------------------------------------------------------------
-%
-% A definicao do benchmark de 10 barras (geometria, material, cargas,
-% catalogo, solucao de referencia) vive na funcao local caso_hadi_10barras,
-% no fim deste arquivo. Como funcao local nao e visivel de fora, o caso e
-% exposto pela chamada especial:
-%
-%   caso = main_hadi_nao_linear('caso');
-%
-% Usam esse acessor: main_hadi_linear.m, main_estudo_estatistico.m,
-% main_awruch_discreto.m (herda a geometria) e os testes do Bloco 2.
+% FONTE UNICA DO CASO HADI: geometria, material, cargas, catalogo e solucao
+% de referencia vivem na funcao local caso_hadi_10barras, exposta por
+% main_hadi_nao_linear('caso'). Usam esse acessor main_hadi_linear.m,
+% main_estudo_estatistico.m, main_awruch_discreto.m (herda a geometria) e os
+% testes do Bloco 2.
 %
 % -------------------------------------------------------------------------
 % REFERENCIAS
@@ -200,8 +191,7 @@ end
 function caso = caso_hadi_10barras()
 % CASO_HADI_10BARRAS  Parametros do benchmark de trelica plana de 10 barras.
 %
-% ARQUIVO DE PARAMETROS (sem logica de solver). Fonte unica do caso Hadi
-% em todo o projeto — ver a nota no cabecalho deste arquivo.
+% Sem logica de solver; ver a nota no cabecalho deste arquivo.
 %
 % -------------------------------------------------------------------------
 % REFERENCIA

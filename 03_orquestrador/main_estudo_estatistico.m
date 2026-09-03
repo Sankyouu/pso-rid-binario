@@ -49,14 +49,14 @@ function resultado = main_estudo_estatistico(n_sementes, configuracoes, tipo_ana
 % - Reporta-se o melhor peso VIAVEL de cada execucao (violacao <= 0).
 %
 % ATENCAO AO CUSTO COMPUTACIONAL: cada avaliacao chama o solver nao linear.
-% Com os padroes abaixo (4 configuracoes x 10 sementes) o estudo leva horas.
+% Com os padroes abaixo (3 configuracoes x 10 sementes) o estudo leva horas.
 % Use n_sementes menor para um ensaio rapido.
 %
 % -------------------------------------------------------------------------
 % USO
 % -------------------------------------------------------------------------
 %
-%   main_estudo_estatistico                  % 10 sementes, 4 configuracoes
+%   main_estudo_estatistico                  % 10 sementes, 3 configuracoes
 %   main_estudo_estatistico(3)               % ensaio rapido
 %   main_estudo_estatistico(10, [], 'linear')% FEM linear (muito mais rapido)
 %   r = main_estudo_estatistico(5);
@@ -186,9 +186,8 @@ n_tarefas = n_cfg * n_sementes;
 %
 % CONSEQUENCIA PRATICA: os 14,7 s de abertura do pool so se pagam a partir de
 % ~35 s de estudo serial. Estudos curtos (poucas sementes, FEM linear) ficam
-% MAIS LENTOS em paralelo — foi o caso da primeira medicao, que deu 1,01x
-% justamente por incluir a abertura. Para o estudo nao linear completo, que
-% leva horas, a abertura e irrelevante.
+% MAIS LENTOS em paralelo. Para o estudo nao linear completo, que leva horas,
+% a abertura e irrelevante.
 
 [grade_c, grade_s] = ndgrid(1:n_cfg, 1:n_sementes);
 grade_c = grade_c(:);

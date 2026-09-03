@@ -38,18 +38,6 @@ function [best_sol, best_cost, cost_history, details] = pso_rid(funcao_custo, co
 %          -> 00_docs/artigos/An efficient constraint handling method for
 %             genetic algorithms.pdf
 %
-% Mapeamento equacao:
-%   Eq. (1) [DF2011] velocidade real ............... secao C
-%   Eq. (2) [DF2011] posicao real .................. secao C
-%   Eq. (3) [DF2011] atualizacao do p-best ......... secao A
-%   Eq. (4) [DF2011] atualizacao do g-best ......... secao A
-%   Eq. (5) [DF2011] dimensoes da particula ........ mapear_dimensoes
-%   Eq. (6) [DF2011] decodificacao binaria ......... decodificar
-%   Eq. (7)-(8), Tab. 1-2 [DF2011] veloc. binaria .. velocidade_binaria
-%   Eq. (9) [DF2011] mutacao polinomial ............ mutacao_polinomial
-%   Sec. 5  [DF2011] busca local no g-best ......... secao B
-%   pag. 316 [DEB2000] dominancia (3 criterios) .... domina_deb
-%
 % -------------------------------------------------------------------------
 % ENTRADAS
 % -------------------------------------------------------------------------
@@ -201,10 +189,6 @@ p_busca_local   = get_param(pso_params, 'p_busca_local',  0.05);
 %     configuracao                 melhor     media    desvio
 %     'datta'                     2357.97   2572.64    173.05
 %     'proporcional'              2342.11   2504.72     97.40
-%
-%   Sem codigos mortos, 100% das particulas viram
-%   projeto avaliavel contra 12.5% no 'datta'. O enxame carrega cerca de
-%   oito vezes mais informacao de projeto por iteracao.
 
 decod_discreta  = get_param(pso_params, 'decodificacao_discreta', 'proporcional');
 assert(any(strcmp(decod_discreta, {'datta', 'proporcional'})), ...
@@ -249,7 +233,7 @@ end
 % -------------------------------------------------------------------------
 
 pos = zeros(n_particulas, total_dim);
-vel = zeros(n_particulas, total_dim);   % velocidades iniciam em zero
+vel = zeros(n_particulas, total_dim);
 
 for i = 1:n_particulas
     pos(i,:) = amostrar_particula(mapa_dimensoes, config_vars, total_dim);
@@ -537,15 +521,7 @@ end
 
 
 % #########################################################################
-% #########################################################################
-% ##                                                                     ##
-% ##                          FUNCOES LOCAIS                             ##
-% ##                                                                     ##
-% ##  Uma por formula de [DF2011] / [DEB2000], na ordem das equacoes.     ##
-% ##  Sao privadas a este arquivo; para exercita-las isoladamente use     ##
-% ##  aux = pso_rid('auxiliares') (ver cabecalho).                        ##
-% ##                                                                     ##
-% #########################################################################
+% FUNCOES LOCAIS — uma por formula, na ordem das equacoes
 % #########################################################################
 
 
@@ -676,8 +652,7 @@ function [vars, viol_estrutural] = decodificar(vetor_hibrido, mapa, config, modo
 %   A versao anterior deste solver fazia min(x, max) e ignorava completamente
 %   o limite inferior .min — bug corrigido aqui.
 %
-% -------------------------------------------------------------------------
-
+%
 % TRATAMENTO DE VALORES FORA DO DOMINIO
 %   Sao sinalizados via viol_estrutural > 0. O chamador deve trata-los pela
 %   regra de [DEB2000] (comparacao apenas por violacao), SEM avaliar a funcao
@@ -689,8 +664,6 @@ function [vars, viol_estrutural] = decodificar(vetor_hibrido, mapa, config, modo
 %     - variavel 'D' (discreta) em modo 'datta'    — indice > N.
 %   No modo 'proporcional' (o PADRAO) o indice e saturado em 1..N por
 %   construcao e o ramo discreto NUNCA contribui.
-
-% -------------------------------------------------------------------------
 %
 % ENTRADAS
 %   vetor_hibrido : vetor 1 x total_dim com a posicao da particula
@@ -714,7 +687,6 @@ for k = 1:n_vars
     info = mapa(k);
 
     if strcmp(info.tipo, 'R')
-        % Variavel real: valor lido diretamente da dimensao real
         vars(k) = vetor_hibrido(info.inicio);
 
     else
@@ -1048,11 +1020,9 @@ function houve = progresso_deb(custo_novo, viol_novo, custo_ref, viol_ref)
 % regiao viavel cedo. So a mola exercita o caminho novo, e ali a diferenca
 % nao se separa do ruido.
 %
-% ENTAO POR QUE MANTER. Porque a razao e de correcao, nao de desempenho: o
-% criterio de parada passou a usar a MESMA nocao de progresso que o resto do
-% algoritmo, e o limiar passou a ser adimensional. A hipotese de que o
-% defeito 2 explicava a lacuna de reprodutibilidade das engrenagens (1% aqui
-% contra 100% em [DF2011]) foi TESTADA E REJEITADA: a taxa nao mudou.
+% MANTIDO mesmo assim: a razao e de correcao, nao de desempenho. A hipotese
+% de que o defeito 2 explicava a lacuna de reprodutibilidade das engrenagens
+% (1% aqui contra 100% em [DF2011]) foi TESTADA E REJEITADA.
 
 TOL_REL = 1e-9;   % melhora relativa minima para contar como progresso
 

@@ -233,14 +233,9 @@ for inc = 1:n_inc
         % --- Condicoes de contorno e passo de Newton-Raphson
         %     Eq. (18) [HA2003]:  [Kt]_i {du} = {R}_i
         %
-        %     Resolve-se apenas no bloco LIVRE. E ALGEBRICAMENTE IDENTICO ao
-        %     que a versao anterior fazia (copiar KT, zerar linha e coluna de
-        %     cada apoio, por 1 na diagonal e zerar o residuo): zerar a coluna
-        %     do apoio o desacopla das equacoes livres, que ficam
-        %         KT(livres,livres) * du(livres) = R(livres),
-        %     e a linha com 1 na diagonal forca du(apoio) = 0.
-        %     A diferenca e de custo: nao copia KT, nao varre os apoios e
-        %     fatora um sistema menor.
+        %     Resolve-se so no bloco LIVRE, o que e algebricamente identico a
+        %     zerar linha e coluna de cada apoio com 1 na diagonal — e mais
+        %     barato: nao copia KT nem fatora as equacoes restringidas.
 
         du = zeros(s_dof, 1);
         du(dofs_livres) = KT(dofs_livres, dofs_livres) \ R(dofs_livres);
@@ -270,9 +265,7 @@ for inc = 1:n_inc
 
         % --- Forcas internas na configuracao corrente
         %     Equilibrio do elemento: q = P * [-lam; -mu; +lam; +mu]
-        %
-        %     Reaproveita dxc/dyc/L_cor calculados logo acima: antes a mesma
-        %     geometria era recalculada num segundo laco sobre elementos.
+        %     Reaproveita dxc/dyc/L_cor calculados logo acima.
 
         F_ext_acc = inc * dF;
 

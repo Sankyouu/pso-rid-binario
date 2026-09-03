@@ -28,17 +28,9 @@ function resultado = main_hadi_20barras(seed, n_runs, modo)
 %   3. TRELICA BIAPOIADA. Hadi-10 e Awruch sao balanços engastados; esta e
 %      simplesmente apoiada (apoio fixo num extremo, movel no outro).
 %
-% -------------------------------------------------------------------------
-% ESTE ARQUIVO E A FONTE UNICA DO CASO DE 20 BARRAS
-% -------------------------------------------------------------------------
-%
-% A definicao do benchmark vive na funcao local caso_hadi_20barras, no fim
-% deste arquivo. Como funcao local nao e visivel de fora, o caso e exposto
-% pela chamada especial:
-%
-%   caso = main_hadi_20barras('caso');
-%
-% Mesmo padrao de main_hadi_nao_linear('caso') e main_awruch_discreto('caso').
+% FONTE UNICA DO CASO: a definicao do benchmark vive na funcao local
+% caso_hadi_20barras, exposta por main_hadi_20barras('caso') — mesmo padrao
+% de main_hadi_nao_linear e main_awruch_discreto.
 %
 % -------------------------------------------------------------------------
 % REFERENCIAS
@@ -246,9 +238,7 @@ end
 
 function caso = caso_hadi_20barras()
 % CASO_HADI_20BARRAS  Parametros do benchmark de trelica plana de 20 barras.
-%
-% ARQUIVO DE PARAMETROS (sem logica de solver). Fonte unica do caso de 20
-% barras em todo o projeto.
+% Sem logica de solver.
 %
 % -------------------------------------------------------------------------
 % REFERENCIA
@@ -533,9 +523,6 @@ caso.ref_peso  = caso.ref_peso_nao_linear;
 % resultado e sem lastro na fonte. Se a Ref. [19] for obtida, basta
 % acrescentar ao catalogo um vetor .raio_giracao e estender avaliar_projeto
 % com as Eqs. (3)-(5).
-%
-% A Tabela 2 nao informa a qual das duas etapas os resultados publicados
-% correspondem, o que e mais um motivo para nao tratar 6222/6253 como alvo.
 
 % -------------------------------------------------------------------------
 % CONFIGURACAO DAS VARIAVEIS DE PROJETO (para o PSO-RID do Bloco 1)

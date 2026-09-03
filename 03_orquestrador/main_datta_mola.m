@@ -38,9 +38,6 @@ function resultado = main_datta_mola(seed, n_runs)
 %                                   produz numero COMPLEXO silenciosamente)
 %   3. MUTACAO POLINOMIAL Eq. (9)  com eta sorteado em [25,45]
 %
-% Ate aqui, todos os casos estruturais usavam so 'D' e o trem de engrenagens
-% so 'I'. Este e o primeiro em que o ramo real de pso_rid.m roda de verdade.
-%
 % -------------------------------------------------------------------------
 % O PROBLEMA ([DF2011] Sec. 5.2, Fig. 2, Eq. 13, Tabelas 5 e 6)
 % -------------------------------------------------------------------------
@@ -429,10 +426,14 @@ caso.ref_faixa_f = [2.658559, 2.658599];
 %
 % Ou seja, gasta-se o mesmo esforco e chega-se ao mesmo melhor valor, mas com
 % muito mais dispersao entre execucoes. E o mesmo padrao ja registrado em
-% main_datta_engrenagens.m, so que bem menos severo — la o otimo aparecia em
-% 1% das execucoes, aqui em 13%. Por isso o relatorio deste orquestrador
-% imprime a TAXA DE SUCESSO e a distribuicao de pares (N,d): o numero
-% interessante nao e o melhor f, e com que frequencia ele reaparece.
+% main_datta_engrenagens.m, so que menos severo — la o otimo aparece em 1%
+% das execucoes, aqui em 4%. Por isso o relatorio deste orquestrador imprime
+% a TAXA DE SUCESSO e a distribuicao de pares (N,d): o numero interessante
+% nao e o melhor f, e com que frequencia ele reaparece.
+%
+% A taxa acima foi medida ANTES de [D9] (ver pso_rid.m). Depois de [D9],
+% 200 sementes deram 12/200 = 6.0% — diferenca sem significancia estatistica
+% (McNemar p = 0,238).
 
 end
 
